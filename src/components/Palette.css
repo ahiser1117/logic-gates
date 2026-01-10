@@ -1,0 +1,121 @@
+.palette {
+  width: 120px;
+  background: #16213e;
+  border-right: 1px solid #0f3460;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.palette h3 {
+  font-size: 14px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.palette h4 {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.palette-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.palette-item {
+  cursor: grab;
+  user-select: none;
+}
+
+.palette-item:active {
+  cursor: grabbing;
+}
+
+.gate-icon {
+  background: #1e3a5f;
+  border: 1px solid #3b82f6;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: #e2e8f0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.gate-icon:hover {
+  background: #2563eb;
+  border-color: #60a5fa;
+}
+
+/* Custom component styling */
+.gate-icon.gate-custom {
+  background: #4a1e5f;
+  border-color: #9333ea;
+}
+
+.gate-icon.gate-custom:hover {
+  background: #7c3aed;
+  border-color: #a855f7;
+}
+
+.palette-item.custom {
+  position: relative;
+}
+
+.palette-item.custom .delete-btn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #dc2626;
+  border: none;
+  color: white;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.palette-item.custom:hover .delete-btn {
+  opacity: 1;
+}
+
+.palette-item.custom .delete-btn:hover {
+  background: #ef4444;
+}
+
+/* Create component button */
+.palette-actions {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #0f3460;
+}
+
+.create-component-btn {
+  width: 100%;
+  padding: 8px 12px;
+  background: #334155;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.create-component-btn:hover {
+  background: #475569;
+}

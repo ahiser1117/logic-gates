@@ -1,0 +1,52 @@
+# canvas/ - Canvas Rendering & Interaction
+
+All circuit visualization and mouse interaction happens here.
+
+## Files
+
+### CanvasWorkspace.tsx
+Main React component wrapping the canvas element. Handles:
+- Mouse events (down/move/up/wheel)
+- Drag-and-drop from palette
+- Keyboard shortcuts (Delete, Escape)
+- Viewport centering on init
+- Marquee selection (drag on empty space to select multiple components)
+- Double-click on board pin labels to edit them
+
+Key refs:
+- `dragStartPositions` - tracks component positions during drag
+- `boardDragStart` - tracks board position during board drag
+
+### renderer.ts
+Pure drawing functions. Called every frame via `requestAnimationFrame`.
+
+Key functions:
+- `renderFrame()` - main entry, draws everything
+- `drawComponent()` - gate body, label, pins
+- `drawWire()` - L-shaped wire routing
+- `drawInputBoard()` / `drawOutputBoard()` - board with header buttons
+
+Layout constants (must match hitTest.ts):
+- `BOARD_WIDTH = 100`
+- `BOARD_HEADER_HEIGHT = 40`
+- `PIN_SPACING = 40`
+- `PIN_START_Y = 40`
+
+### hitTest.ts
+Determines what the user clicked. Returns `HitResult` with type and IDs.
+
+Hit types: `none`, `component`, `pin`, `wire`, `input-board`, `output-board`, `input-add-button`, `input-remove-button`, `output-add-button`, `output-remove-button`, `input-toggle`, `input-label`, `output-label`
+
+### grid.ts
+Coordinate transforms and grid drawing.
+- `worldToScreen(x, y, viewport)` - world to screen coords
+- `screenToWorld(x, y, viewport)` - screen to world coords
+- `snapToGrid(value, gridSize)` - snap to grid
+- `drawGrid()` - background grid pattern
+
+## Coordinate System
+- World coords: logical circuit positions
+- Screen coords: CSS pixels on canvas
+- Viewport: `{ panX, panY, zoom }` - transforms world to screen
+
+The canvas uses `devicePixelRatio` for sharp rendering but mouse events use CSS pixels.

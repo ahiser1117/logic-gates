@@ -1,0 +1,41 @@
+# components/ - React UI Components
+
+Standard React components for the app shell. Note: circuit elements (gates, wires, boards) are rendered on canvas, not as React components.
+
+## Files
+
+### Layout.tsx
+Main app layout with sidebar and canvas area.
+```
+┌─────────┬──────────────────┐
+│ Palette │                  │
+│         │ CanvasWorkspace  │
+│         │                  │
+└─────────┴──────────────────┘
+```
+
+### Palette.tsx
+Sidebar with draggable gate components.
+- Lists primitive gates from `GATE_DEFINITIONS`
+- Lists custom components from store
+- Drag to canvas to add new gates/components
+- Sets `dataTransfer.setData('componentType', type)` on drag
+- "Create Component" button opens dialog to save current circuit
+
+### CreateComponentDialog.tsx
+Modal dialog for creating custom components.
+- Name input field
+- Shows input/output count from current circuit
+- Displays validation errors if circuit is invalid
+- Validates: all board pins connected, all component pins used
+
+### InputBoard.tsx / OutputBoard.tsx
+**NOT USED** - Legacy React components. Input/output boards are now rendered directly on canvas in `renderer.ts` and are draggable.
+
+## Styling
+- `Layout.css` - flexbox layout
+- `Palette.css` - sidebar and gate item styles
+- `Board.css` - (legacy, unused)
+
+## Adding UI Components
+Standard React patterns apply. These components don't interact with the canvas directly - they use the Zustand store for state.

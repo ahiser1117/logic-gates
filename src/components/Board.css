@@ -1,0 +1,129 @@
+.board {
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+}
+
+.output-board {
+  border-bottom: none;
+  border-top: 1px solid #0f3460;
+}
+
+.board-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  min-width: 60px;
+}
+
+.board-items {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.board-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e3a5f;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.toggle-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.toggle-btn.off {
+  background: #374151;
+  color: #9ca3af;
+}
+
+.toggle-btn.on {
+  background: #22c55e;
+  color: white;
+}
+
+.value-indicator {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.value-indicator.off {
+  background: #374151;
+  color: #9ca3af;
+}
+
+.value-indicator.on {
+  background: #22c55e;
+  color: white;
+}
+
+.item-label {
+  width: 40px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #475569;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 2px 4px;
+  outline: none;
+}
+
+.item-label:focus {
+  border-color: #3b82f6;
+}
+
+.remove-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-btn:hover {
+  background: #ef4444;
+  color: white;
+}
+
+.add-btn {
+  background: transparent;
+  border: 1px dashed #475569;
+  color: #94a3b8;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.add-btn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
