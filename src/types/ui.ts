@@ -15,7 +15,7 @@ export interface Selection {
 
 // === Pin Reference ===
 export type PinRef =
-  | { type: 'component'; componentId: ComponentId; pinIndex: number }
+  | { type: 'component'; componentId: ComponentId; pinIndex: number; pinType: 'input' | 'output' }
   | { type: 'input'; inputId: InputId }
   | { type: 'output'; outputId: number }
 

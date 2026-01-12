@@ -24,8 +24,26 @@ Pure drawing functions. Called every frame via `requestAnimationFrame`.
 Key functions:
 - `renderFrame()` - main entry, draws everything
 - `drawComponent()` - gate body, label, pins (receives simulation data for pin activation)
-- `drawWire()` - L-shaped wire routing
+- `drawWire()` - uses `computeWirePath()` for intelligent routing around obstacles
+- `drawWiringPreview()` - live preview during wire creation, also uses pathfinding
 - `drawInputBoard()` / `drawOutputBoard()` - board with header buttons, supports hover states
+
+### wirePathfinding.ts
+A* pathfinding for wire routing around obstacles.
+
+Key functions:
+- `computeWirePath(wire, circuit, customComponents)` - returns waypoints for a wire
+- `computePreviewPath(start, end, circuit, customComponents, isSourcePin)` - for live preview
+- `clearPathCache()` / `clearWirePath(wireId)` - cache management
+- `clearPathsForComponent(componentId, circuit)` - invalidate on component move
+- `clearPathsForInputBoard(circuit)` / `clearPathsForOutputBoard(circuit)` - invalidate on board move
+
+Algorithm:
+- Default: L-shaped path (horizontal → vertical → horizontal with midpoint)
+- If L-shape intersects obstacles: A* pathfinding with turn penalty
+- Wires exit straight from source pins (20 units right) and enter straight to target pins (20 units left)
+- Grid step: 10 units (half-grid), obstacle padding: 15 units, turn penalty: 5 units
+- Paths cached by wireId, invalidated when connected components/boards move
 
 Layout constants (must match hitTest.ts):
 - `BOARD_WIDTH = 100`

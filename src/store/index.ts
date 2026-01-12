@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { enableMapSet } from 'immer'
+import {
+  clearPathsForComponent,
+  clearPathsForInputBoard,
+  clearPathsForOutputBoard,
+} from '../canvas/wirePathfinding'
 
 // Enable Immer support for Map and Set
 enableMapSet()
@@ -138,6 +143,8 @@ export const useStore = create<AppState>()(
         if (component) {
           component.x = x
           component.y = y
+          // Clear cached wire paths for this component
+          clearPathsForComponent(id, state.circuit)
         }
       })
     },
@@ -149,6 +156,8 @@ export const useStore = create<AppState>()(
           if (component) {
             component.x += dx
             component.y += dy
+            // Clear cached wire paths for this component
+            clearPathsForComponent(id, state.circuit)
           }
         }
       })
@@ -273,6 +282,8 @@ export const useStore = create<AppState>()(
       set((state) => {
         state.circuit.inputBoard.x = x
         state.circuit.inputBoard.y = y
+        // Clear cached wire paths for input board wires
+        clearPathsForInputBoard(state.circuit)
       })
     },
 
@@ -280,6 +291,8 @@ export const useStore = create<AppState>()(
       set((state) => {
         state.circuit.outputBoard.x = x
         state.circuit.outputBoard.y = y
+        // Clear cached wire paths for output board wires
+        clearPathsForOutputBoard(state.circuit)
       })
     },
 
@@ -519,7 +532,7 @@ export const useStore = create<AppState>()(
         if (p.type === 'input') {
           return { type: 'input', inputId: p.inputId }
         }
-        if (p.type === 'component') {
+        if (p.type === 'component' && p.pinType === 'output') {
           return { type: 'component', componentId: p.componentId, pinIndex: p.pinIndex }
         }
         return null
@@ -531,10 +544,21 @@ export const useStore = create<AppState>()(
         if (p.type === 'output') {
           return { type: 'output', outputId: p.outputId as OutputId }
         }
-        if (p.type === 'component') {
+        if (p.type === 'component' && p.pinType === 'input') {
           return { type: 'component', componentId: p.componentId, pinIndex: p.pinIndex }
         }
         return null
+      }
+
+      // Check for self-connection (component output to its own input)
+      const isSelfConnection =
+        startPin.type === 'component' &&
+        pin.type === 'component' &&
+        startPin.componentId === pin.componentId
+
+      if (isSelfConnection) {
+        state.cancelWiring()
+        return
       }
 
       // Try startPin as source, pin as target

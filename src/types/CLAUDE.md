@@ -53,7 +53,13 @@ UI state types.
 
 - `Viewport` - panX, panY, zoom
 - `DragState` - type + coordinates
-- `PinRef` - union type for referencing any pin
+- `PinRef` - union type for referencing any pin:
+  ```typescript
+  type PinRef =
+    | { type: 'component'; componentId; pinIndex; pinType: 'input' | 'output' }
+    | { type: 'input'; inputId }
+    | { type: 'output'; outputId }
+  ```
 - `HoveredButton` - union type for board button hover states:
   ```typescript
   type HoveredButton =

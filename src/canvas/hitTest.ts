@@ -2,6 +2,7 @@ import type { Circuit, ComponentId, WireId, InputId, OutputId, CustomComponentId
 import type { Viewport } from '../types'
 import { screenToWorld } from './grid'
 import { getComponentDefinition } from '../simulation'
+import { computeWirePath } from './wirePathfinding'
 
 const PIN_HIT_RADIUS = 12
 const WIRE_HIT_RADIUS = 6
@@ -115,24 +116,18 @@ export function hitTest(
 
   // Check wires
   for (const wire of circuit.wires) {
-    const start = getWireEndpointWorld(wire.source, circuit, customComponents)
-    const end = getWireEndpointWorld(wire.target, circuit, customComponents)
+    // Get the computed path for this wire
+    const path = computeWirePath(wire, circuit, customComponents)
+    if (path.length < 2) continue
 
-    if (!start || !end) continue
-
-    // L-shaped wire: check horizontal, vertical, and connecting segments
-    const midX = (start.x + end.x) / 2
-
-    if (distanceToSegment(world.x, world.y, start.x, start.y, midX, start.y) < WIRE_HIT_RADIUS / scale) {
-      return { type: 'wire', wireId: wire.id }
-    }
-
-    if (distanceToSegment(world.x, world.y, midX, start.y, midX, end.y) < WIRE_HIT_RADIUS / scale) {
-      return { type: 'wire', wireId: wire.id }
-    }
-
-    if (distanceToSegment(world.x, world.y, midX, end.y, end.x, end.y) < WIRE_HIT_RADIUS / scale) {
-      return { type: 'wire', wireId: wire.id }
+    // Check distance to each segment in the path
+    for (let i = 0; i < path.length - 1; i++) {
+      const p1 = path[i]
+      const p2 = path[i + 1]
+      if (!p1 || !p2) continue
+      if (distanceToSegment(world.x, world.y, p1.x, p1.y, p2.x, p2.y) < WIRE_HIT_RADIUS / scale) {
+        return { type: 'wire', wireId: wire.id }
+      }
     }
   }
 
@@ -280,48 +275,6 @@ function hitTestOutputBoard(worldX: number, worldY: number, circuit: Circuit, sc
   }
 
   return { type: 'none' }
-}
-
-function getWireEndpointWorld(
-  endpoint: { type: string; componentId?: ComponentId; pinIndex?: number; inputId?: InputId; outputId?: OutputId },
-  circuit: Circuit,
-  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
-): { x: number; y: number } | null {
-  if (endpoint.type === 'component') {
-    const component = circuit.components.find((c) => c.id === endpoint.componentId)
-    if (!component) return null
-
-    const def = getComponentDefinition(component.type, customComponents)
-    if (!def) return null
-
-    const pin = def.pins.find((p) => p.index === endpoint.pinIndex!)
-    if (!pin) return null
-
-    return {
-      x: component.x + pin.offsetX,
-      y: component.y + pin.offsetY,
-    }
-  } else if (endpoint.type === 'input') {
-    const input = circuit.inputs.find((i) => i.id === endpoint.inputId)
-    if (!input) return null
-
-    const { x: boardX, y: boardY } = circuit.inputBoard
-    return {
-      x: boardX + BOARD_WIDTH / 2,
-      y: boardY + PIN_START_Y + input.order * PIN_SPACING,
-    }
-  } else if (endpoint.type === 'output') {
-    const output = circuit.outputs.find((o) => o.id === endpoint.outputId)
-    if (!output) return null
-
-    const { x: boardX, y: boardY } = circuit.outputBoard
-    return {
-      x: boardX - BOARD_WIDTH / 2,
-      y: boardY + PIN_START_Y + output.order * PIN_SPACING,
-    }
-  }
-
-  return null
 }
 
 function distance(x1: number, y1: number, x2: number, y2: number): number {

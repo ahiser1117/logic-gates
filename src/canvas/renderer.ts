@@ -4,6 +4,7 @@ import type { SimulationResult } from '../hooks/useSimulation'
 import { drawGrid, worldToScreen } from './grid'
 import { isPrimitiveGate } from '../types'
 import { getComponentDefinition } from '../simulation'
+import { computeWirePath, computePreviewPath, type Point } from './wirePathfinding'
 
 // Board layout constants (must match hitTest)
 const BOARD_WIDTH = 100
@@ -213,10 +214,12 @@ function drawWire(
   signalValue: boolean,
   customComponents?: Map<CustomComponentId, CustomComponentDefinition>
 ) {
-  const start = getWireEndpoint(wire.source, circuit, ui, customComponents)
-  const end = getWireEndpoint(wire.target, circuit, ui, customComponents)
+  // Compute path using A* pathfinding
+  const path = computeWirePath(wire, circuit, customComponents)
+  if (path.length < 2) return
 
-  if (!start || !end) return
+  const firstPoint = path[0]
+  if (!firstPoint) return
 
   const selected = ui.selection.wires.has(wire.id)
 
@@ -225,57 +228,18 @@ function drawWire(
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  // Draw L-shaped wire
-  const midX = (start.x + end.x) / 2
-
+  // Draw path as polyline
   ctx.beginPath()
-  ctx.moveTo(start.x, start.y)
-  ctx.lineTo(midX, start.y)
-  ctx.lineTo(midX, end.y)
-  ctx.lineTo(end.x, end.y)
-  ctx.stroke()
-}
+  const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
+  ctx.moveTo(startScreen.x, startScreen.y)
 
-function getWireEndpoint(
-  endpoint: Wire['source'] | Wire['target'],
-  circuit: Circuit,
-  ui: UIState,
-  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
-): { x: number; y: number } | null {
-  if (endpoint.type === 'component') {
-    const component = circuit.components.find((c) => c.id === endpoint.componentId)
-    if (!component) return null
-
-    const def = getComponentDefinition(component.type, customComponents)
-    if (!def) return null
-
-    const pin = def.pins.find((p) => p.index === endpoint.pinIndex)
-    if (!pin) return null
-
-    const screen = worldToScreen(component.x, component.y, ui.viewport)
-    return {
-      x: screen.x + pin.offsetX * ui.viewport.zoom,
-      y: screen.y + pin.offsetY * ui.viewport.zoom,
-    }
-  } else if (endpoint.type === 'input') {
-    const input = circuit.inputs.find((i) => i.id === endpoint.inputId)
-    if (!input) return null
-
-    const { x: boardX, y: boardY } = circuit.inputBoard
-    const pinY = boardY + PIN_START_Y + input.order * PIN_SPACING
-    // Pin is on right side of input board at edge
-    return worldToScreen(boardX + BOARD_WIDTH / 2, pinY, ui.viewport)
-  } else if (endpoint.type === 'output') {
-    const output = circuit.outputs.find((o) => o.id === endpoint.outputId)
-    if (!output) return null
-
-    const { x: boardX, y: boardY } = circuit.outputBoard
-    const pinY = boardY + PIN_START_Y + output.order * PIN_SPACING
-    // Pin is on left side of output board at edge
-    return worldToScreen(boardX - BOARD_WIDTH / 2, pinY, ui.viewport)
+  for (let i = 1; i < path.length; i++) {
+    const pt = path[i]
+    if (!pt) continue
+    const screen = worldToScreen(pt.x, pt.y, ui.viewport)
+    ctx.lineTo(screen.x, screen.y)
   }
-
-  return null
+  ctx.stroke()
 }
 
 function drawWiringPreview(
@@ -287,7 +251,9 @@ function drawWiringPreview(
   const startPin = ui.wiring.startPin
   if (!startPin) return
 
-  let start: { x: number; y: number } | null = null
+  // Get start point in world coordinates and determine if it's a source pin
+  let startWorld: Point | null = null
+  let isSourcePin = true // Sources exit to the right, targets exit to the left
 
   if (startPin.type === 'component') {
     const component = circuit.components.find((c) => c.id === startPin.componentId)
@@ -296,46 +262,70 @@ function drawWiringPreview(
       if (def) {
         const pin = def.pins.find((p) => p.index === startPin.pinIndex)
         if (pin) {
-          const screen = worldToScreen(component.x, component.y, ui.viewport)
-          start = {
-            x: screen.x + pin.offsetX * ui.viewport.zoom,
-            y: screen.y + pin.offsetY * ui.viewport.zoom,
+          startWorld = {
+            x: component.x + pin.offsetX,
+            y: component.y + pin.offsetY,
           }
+          // Output pins are sources, input pins are targets
+          isSourcePin = pin.direction === 'output'
         }
       }
     }
   } else if (startPin.type === 'input') {
+    // Input board pins are sources (they provide values)
     const input = circuit.inputs.find((i) => i.id === startPin.inputId)
     if (input) {
       const { x: boardX, y: boardY } = circuit.inputBoard
-      const pinY = boardY + PIN_START_Y + input.order * PIN_SPACING
-      start = worldToScreen(boardX + BOARD_WIDTH / 2, pinY, ui.viewport)
+      startWorld = {
+        x: boardX + BOARD_WIDTH / 2,
+        y: boardY + PIN_START_Y + input.order * PIN_SPACING,
+      }
+      isSourcePin = true
     }
   } else if (startPin.type === 'output') {
+    // Output board pins are targets (they receive values)
     const output = circuit.outputs.find((o) => o.id === startPin.outputId)
     if (output) {
       const { x: boardX, y: boardY } = circuit.outputBoard
-      const pinY = boardY + PIN_START_Y + output.order * PIN_SPACING
-      start = worldToScreen(boardX - BOARD_WIDTH / 2, pinY, ui.viewport)
+      startWorld = {
+        x: boardX - BOARD_WIDTH / 2,
+        y: boardY + PIN_START_Y + output.order * PIN_SPACING,
+      }
+      isSourcePin = false
     }
   }
 
-  if (!start) return
+  if (!startWorld) return
 
-  const endX = ui.drag.currentX
-  const endY = ui.drag.currentY
+  // Convert mouse position to world coordinates
+  const endWorld = {
+    x: (ui.drag.currentX - ui.viewport.panX) / ui.viewport.zoom,
+    y: (ui.drag.currentY - ui.viewport.panY) / ui.viewport.zoom,
+  }
+
+  // Compute path using pathfinding
+  const path = computePreviewPath(startWorld, endWorld, circuit, customComponents, isSourcePin)
+
+  if (path.length < 2) return
+
+  const firstPoint = path[0]
+  if (!firstPoint) return
 
   ctx.strokeStyle = '#60a5fa'
   ctx.lineWidth = 2
   ctx.setLineDash([5, 5])
 
-  const midX = (start.x + endX) / 2
-
+  // Draw path as polyline
   ctx.beginPath()
-  ctx.moveTo(start.x, start.y)
-  ctx.lineTo(midX, start.y)
-  ctx.lineTo(midX, endY)
-  ctx.lineTo(endX, endY)
+  const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
+  ctx.moveTo(startScreen.x, startScreen.y)
+
+  for (let i = 1; i < path.length; i++) {
+    const pt = path[i]
+    if (!pt) continue
+    const screen = worldToScreen(pt.x, pt.y, ui.viewport)
+    ctx.lineTo(screen.x, screen.y)
+  }
   ctx.stroke()
 
   ctx.setLineDash([])

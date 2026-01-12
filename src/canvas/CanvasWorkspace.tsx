@@ -231,6 +231,7 @@ export function CanvasWorkspace() {
               type: 'component',
               componentId: hit.componentId!,
               pinIndex: hit.pinIndex!,
+              pinType: hit.pinType as 'input' | 'output',
             })
           }
           setDrag({
@@ -421,6 +422,7 @@ export function CanvasWorkspace() {
               type: 'component',
               componentId: hit.componentId!,
               pinIndex: hit.pinIndex!,
+              pinType: hit.pinType as 'input' | 'output',
             })
           }
         } else {

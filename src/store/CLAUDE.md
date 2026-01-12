@@ -71,6 +71,19 @@ Initial circuit starts with 1 default input and 1 default output. Boards are pos
 - `setHoveredBoardPin(inputId, outputId)` - board pin hover
 - `setHoveredButton(button)` - board button hover (add/remove/toggle)
 
+## Wire Connection Validation
+`completeWiring()` enforces these rules:
+- **Sources**: Input Board pins, component output pins
+- **Targets**: Output Board pins, component input pins
+- Component input pins cannot connect to each other or to Output Board pins
+- Self-connections (component output to its own input) are rejected
+
+## Wire Path Cache
+Moving components or boards invalidates affected wire paths:
+- `moveComponent()` / `moveSelectedComponents()` → `clearPathsForComponent()`
+- `moveInputBoard()` → `clearPathsForInputBoard()`
+- `moveOutputBoard()` → `clearPathsForOutputBoard()`
+
 ## ID Generation
 Uses module-level counters cast to branded types:
 ```typescript
