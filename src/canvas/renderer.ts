@@ -82,7 +82,7 @@ export function renderFrame(
   // Draw components
   for (const component of circuit.components) {
     const selected = ui.selection.components.has(component.id)
-    drawComponent(ctx, component, selected, ui, circuit, simulation, customComponents)
+    drawComponent(ctx, component, selected, ui, simulation, customComponents)
   }
 
   // Draw marquee selection
@@ -96,7 +96,6 @@ function drawComponent(
   component: Component,
   selected: boolean,
   ui: UIState,
-  circuit: Circuit,
   simulation: SimulationResult,
   customComponents?: Map<CustomComponentId, CustomComponentDefinition>
 ) {
@@ -138,7 +137,18 @@ function drawComponent(
   } else {
     label = component.type
   }
-  ctx.fillText(label, screen.x, screen.y)
+
+  // Wrap text if too long for component width (account for pin radii on each side)
+  const pinRadius = 8 * scale
+  const maxWidth = w - 2 * pinRadius - 4 * scale // subtract pins and padding
+  const lines = wrapText(ctx, label, maxWidth)
+  const lineHeight = 14 * scale
+  const totalHeight = lines.length * lineHeight
+  const startY = screen.y - totalHeight / 2 + lineHeight / 2
+
+  lines.forEach((line, i) => {
+    ctx.fillText(line, screen.x, startY + i * lineHeight)
+  })
 
   // Draw pins
   for (const pin of def.pins) {
@@ -147,34 +157,20 @@ function drawComponent(
     const isHovered =
       ui.hoveredComponentId === component.id && ui.hoveredPinIndex === pin.index
 
-    // Find wire connected to this pin and get its value
-    let pinActive = false
-    for (const wire of circuit.wires) {
-      const isConnected =
-        (wire.source.type === 'component' &&
-          wire.source.componentId === component.id &&
-          wire.source.pinIndex === pin.index) ||
-        (wire.target.type === 'component' &&
-          wire.target.componentId === component.id &&
-          wire.target.pinIndex === pin.index)
-      if (isConnected) {
-        pinActive = simulation.wireValues.get(wire.id) ?? false
-        break
-      }
-    }
+    // Get pin value from simulation (works even without connected wires)
+    const componentPins = simulation.componentPinValues.get(component.id)
+    const pinActive = componentPins?.get(pin.index) ?? false
 
-    const pinRadius = isHovered ? 10 * scale : 8 * scale
+    const pinRadius = 8 * scale
     ctx.beginPath()
     ctx.arc(pinX, pinY, pinRadius, 0, Math.PI * 2)
-    ctx.fillStyle = isHovered ? COLORS.pinHovered : pinActive ? COLORS.toggleOn : COLORS.boardPin
+    ctx.fillStyle = pinActive ? COLORS.toggleOn : COLORS.boardPin
     ctx.fill()
 
-    // Draw hover ring
+    // Draw hover outline
     if (isHovered) {
       ctx.strokeStyle = COLORS.pinHovered
       ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(pinX, pinY, 12 * scale, 0, Math.PI * 2)
       ctx.stroke()
     }
 
@@ -459,18 +455,16 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
 
     // Draw pin (right side, for wiring)
     const pinX = screen.x + (BOARD_WIDTH / 2) * scale
-    const pinRadius = isHovered ? 10 * scale : 8 * scale
+    const pinRadius = 8 * scale
     ctx.beginPath()
     ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
-    ctx.fillStyle = isHovered ? COLORS.pinHovered : input.value ? COLORS.toggleOn : COLORS.boardPin
+    ctx.fillStyle = input.value ? COLORS.toggleOn : COLORS.boardPin
     ctx.fill()
 
-    // Draw hover ring
+    // Draw hover outline
     if (isHovered) {
       ctx.strokeStyle = COLORS.pinHovered
       ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(pinX, screen.y, 12 * scale, 0, Math.PI * 2)
       ctx.stroke()
     }
   }
@@ -554,18 +548,16 @@ function drawOutputBoard(
 
     // Draw pin (left side, for wiring)
     const pinX = screen.x - (BOARD_WIDTH / 2) * scale
-    const pinRadius = isHovered ? 10 * scale : 8 * scale
+    const pinRadius = 8 * scale
     ctx.beginPath()
     ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
-    ctx.fillStyle = isHovered ? COLORS.pinHovered : value ? COLORS.toggleOn : COLORS.boardPin
+    ctx.fillStyle = value ? COLORS.toggleOn : COLORS.boardPin
     ctx.fill()
 
-    // Draw hover ring
+    // Draw hover outline
     if (isHovered) {
       ctx.strokeStyle = COLORS.pinHovered
       ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(pinX, screen.y, 12 * scale, 0, Math.PI * 2)
       ctx.stroke()
     }
 
@@ -629,4 +621,47 @@ function drawMarquee(ctx: CanvasRenderingContext2D, ui: UIState) {
   ctx.strokeRect(left, top, width, height)
 
   ctx.setLineDash([])
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  // If text fits, return as single line
+  if (ctx.measureText(text).width <= maxWidth) {
+    return [text]
+  }
+
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    if (ctx.measureText(testLine).width <= maxWidth) {
+      currentLine = testLine
+    } else {
+      if (currentLine) {
+        lines.push(currentLine)
+      }
+      // If single word is too long, split by character
+      if (ctx.measureText(word).width > maxWidth) {
+        let remaining = word
+        while (remaining) {
+          let i = remaining.length
+          while (i > 1 && ctx.measureText(remaining.slice(0, i)).width > maxWidth) {
+            i--
+          }
+          lines.push(remaining.slice(0, i))
+          remaining = remaining.slice(i)
+        }
+        currentLine = ''
+      } else {
+        currentLine = word
+      }
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine)
+  }
+
+  return lines.length > 0 ? lines : [text]
 }

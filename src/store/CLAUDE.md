@@ -49,10 +49,12 @@ ui: {
 - `addComponent(type, x, y)` - add gate or custom component
 - `moveComponent(id, x, y)` - reposition gate
 - `addWire(source, target)` - connect pins (auto-replaces existing connection to target)
-- `addInput()` / `removeInput(id)` - manage input board
-- `addOutput()` / `removeOutput(id)` - manage output board
+- `addInput()` / `removeInput(id)` - manage input board (minimum 1 pin always kept)
+- `addOutput()` / `removeOutput(id)` - manage output board (minimum 1 pin always kept)
 - `renameInput(id, label)` / `renameOutput(id, label)` - rename board pins
 - `moveInputBoard(x, y)` / `moveOutputBoard(x, y)` - reposition boards
+
+Initial circuit starts with 1 default input and 1 default output. Boards are positioned at ±360 (on major grid lines).
 
 ### Custom Components
 - `createCustomComponent(name)` - save current circuit as reusable component

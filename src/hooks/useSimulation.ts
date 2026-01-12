@@ -1,11 +1,12 @@
 import { useMemo } from 'react'
 import { useStore } from '../store'
 import { compile, evaluate, getComponentDefinition } from '../simulation'
-import type { OutputId, WireId } from '../types'
+import type { OutputId, WireId, ComponentId } from '../types'
 
 export interface SimulationResult {
   outputValues: Map<OutputId, boolean>
   wireValues: Map<WireId, boolean>
+  componentPinValues: Map<ComponentId, Map<number, boolean>>
 }
 
 export function useSimulation(): SimulationResult {
@@ -16,6 +17,7 @@ export function useSimulation(): SimulationResult {
     const emptyResult: SimulationResult = {
       outputValues: new Map(),
       wireValues: new Map(),
+      componentPinValues: new Map(),
     }
 
     // Compile circuit to netlist
@@ -68,6 +70,38 @@ export function useSimulation(): SimulationResult {
       wireValues.set(wire.id, value)
     }
 
-    return { outputValues, wireValues }
+    // Compute component pin values (for showing output pin states without wires)
+    const componentPinValues = new Map<ComponentId, Map<number, boolean>>()
+
+    for (const comp of netlist.components) {
+      const def = getComponentDefinition(comp.type, customComponents)
+      if (!def) continue
+
+      const pinValues = new Map<number, boolean>()
+
+      // Get output pin values from the evaluated nets
+      const outputPins = def.pins.filter((p) => p.direction === 'output')
+      outputPins.forEach((pin, idx) => {
+        const netId = comp.outputNetIds[idx]
+        if (netId !== undefined) {
+          const net = netlist.nets[netId]
+          pinValues.set(pin.index, net?.value ?? false)
+        }
+      })
+
+      // Get input pin values from connected nets
+      const inputPins = def.pins.filter((p) => p.direction === 'input')
+      inputPins.forEach((pin, idx) => {
+        const netId = comp.inputNetIds[idx]
+        if (netId !== undefined) {
+          const net = netlist.nets[netId]
+          pinValues.set(pin.index, net?.value ?? false)
+        }
+      })
+
+      componentPinValues.set(comp.id, pinValues)
+    }
+
+    return { outputValues, wireValues, componentPinValues }
   }, [circuit, customComponents])
 }

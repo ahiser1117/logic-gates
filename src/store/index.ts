@@ -25,8 +25,8 @@ import { initialUIState } from '../types/ui'
 // === ID Counters ===
 let nextComponentId = 1
 let nextWireId = 1
-let nextInputId = 1
-let nextOutputId = 1
+let nextInputId = 2
+let nextOutputId = 2
 
 const STORAGE_KEY = 'logic-gate-custom-components'
 
@@ -95,12 +95,12 @@ interface AppState {
 const initialCircuit: Circuit = {
   id: crypto.randomUUID(),
   name: 'Untitled Circuit',
-  inputs: [],
-  outputs: [],
+  inputs: [{ id: 1 as InputId, label: 'I0', value: false, order: 0 }],
+  outputs: [{ id: 1 as OutputId, label: 'O0', order: 0 }],
   components: [],
   wires: [],
-  inputBoard: { x: -350, y: 0 },
-  outputBoard: { x: 350, y: 0 },
+  inputBoard: { x: -360, y: 0 },
+  outputBoard: { x: 360, y: 0 },
 }
 
 // === Store Implementation ===
@@ -198,6 +198,8 @@ export const useStore = create<AppState>()(
 
     removeInput: (id) => {
       set((state) => {
+        // Always keep at least 1 input
+        if (state.circuit.inputs.length <= 1) return
         state.circuit.inputs = state.circuit.inputs.filter((i) => i.id !== id)
         // Remove connected wires
         state.circuit.wires = state.circuit.wires.filter(
@@ -244,6 +246,8 @@ export const useStore = create<AppState>()(
 
     removeOutput: (id) => {
       set((state) => {
+        // Always keep at least 1 output
+        if (state.circuit.outputs.length <= 1) return
         state.circuit.outputs = state.circuit.outputs.filter((o) => o.id !== id)
         // Remove connected wires
         state.circuit.wires = state.circuit.wires.filter(
@@ -310,7 +314,8 @@ export const useStore = create<AppState>()(
         state.circuit.inputs.length,
         state.circuit.outputs.length,
         inputLabels,
-        outputLabels
+        outputLabels,
+        name
       )
 
       const definition: CustomComponentDefinition = {
@@ -343,12 +348,12 @@ export const useStore = create<AppState>()(
         state.circuit = {
           id: crypto.randomUUID(),
           name: 'Untitled Circuit',
-          inputs: [],
-          outputs: [],
+          inputs: [{ id: nextInputId++ as InputId, label: 'I0', value: false, order: 0 }],
+          outputs: [{ id: nextOutputId++ as OutputId, label: 'O0', order: 0 }],
           components: [],
           wires: [],
-          inputBoard: { x: -350, y: 0 },
-          outputBoard: { x: 350, y: 0 },
+          inputBoard: { x: -360, y: 0 },
+          outputBoard: { x: 360, y: 0 },
         }
 
         // Clear selection

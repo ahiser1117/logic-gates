@@ -35,9 +35,13 @@ Layout constants (must match hitTest.ts):
 
 Pin styling:
 - All pins use uniform blue color (`boardPin`), turn green when active
-- Pins are 8px radius (10px when hovered) with hover ring
+- Pins are 8px radius with white outline on hover (no size change)
 - Board pins positioned at board edges (±BOARD_WIDTH/2)
-- Component pins show activation state based on connected wire values
+- Component pins show activation state from simulation (works even without wires)
+
+Custom component labels:
+- Text wraps if too long for component width
+- Width accounts for pin radii (8px each side) plus padding
 
 Button hover colors defined in `COLORS` object (e.g., `addButtonHover`, `removeButtonHover`, `toggleOnHover`).
 
@@ -53,7 +57,7 @@ Coordinate transforms and grid drawing.
 - `worldToScreen(x, y, viewport)` - world to screen coords
 - `screenToWorld(x, y, viewport)` - screen to world coords
 - `snapToGrid(value, gridSize)` - snap to grid
-- `drawGrid()` - background grid with minor lines every `GRID_SIZE` (20) and major lines every 5th line
+- `drawGrid()` - background grid with minor lines every `GRID_SIZE` (20) and major lines every 6th line (120px)
 
 Grid uses integer grid indices (not floating-point modulo) to reliably detect major lines.
 

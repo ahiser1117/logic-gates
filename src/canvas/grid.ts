@@ -30,7 +30,7 @@ export function drawGrid(
   // Draw vertical lines
   let gridIndexX = startGridX
   for (let x = startX; x < width; x += scaledGridSize) {
-    const isMajor = gridIndexX % 5 === 0
+    const isMajor = gridIndexX % 6 === 0
 
     ctx.strokeStyle = isMajor ? GRID_COLOR_MAJOR : GRID_COLOR
     ctx.beginPath()
@@ -43,7 +43,7 @@ export function drawGrid(
   // Draw horizontal lines
   let gridIndexY = startGridY
   for (let y = startY; y < height; y += scaledGridSize) {
-    const isMajor = gridIndexY % 5 === 0
+    const isMajor = gridIndexY % 6 === 0
 
     ctx.strokeStyle = isMajor ? GRID_COLOR_MAJOR : GRID_COLOR
     ctx.beginPath()

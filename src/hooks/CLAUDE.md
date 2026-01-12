@@ -9,13 +9,18 @@ Watches for circuit changes and recomputes:
 1. Compiles circuit to netlist
 2. Topologically sorts gates
 3. Evaluates boolean values
-4. Returns output values map
+4. Returns simulation result with output values, wire values, and component pin values
 
-Usage:
+Returns `SimulationResult`:
 ```typescript
-const outputs = useSimulation(circuit)
-// outputs: Map<OutputId, boolean>
+{
+  outputValues: Map<OutputId, boolean>      // Board output pin values
+  wireValues: Map<WireId, boolean>          // Wire signal values
+  componentPinValues: Map<ComponentId, Map<number, boolean>>  // All component pin values
+}
 ```
+
+The `componentPinValues` map allows rendering pin states even without connected wires.
 
 ### index.ts
 Re-exports hooks for convenient imports.

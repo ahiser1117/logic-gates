@@ -28,7 +28,10 @@ Custom React hooks including `useSimulation` for circuit evaluation.
 ### utils/
 Utility functions for custom component creation.
 - `validation.ts` - validates circuits before saving as components
-- `pinLayout.ts` - computes pin positions for custom component rendering
+- `pinLayout.ts` - computes dimensions and pin positions for custom components:
+  - Width: 60-120px based on name length, rounded to nearest 20px
+  - Height: `max(inputs, outputs) * 20 + 20` (matches NAND behavior)
+  - Pins distributed evenly within available height
 
 ## Data Flow
 1. User interacts with canvas (mouse events)

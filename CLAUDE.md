@@ -16,7 +16,8 @@ src/
 ├── simulation/   # Circuit compilation and evaluation
 ├── types/        # TypeScript type definitions
 ├── components/   # React UI components (Layout, Palette)
-└── hooks/        # Custom React hooks
+├── hooks/        # Custom React hooks
+└── utils/        # Utility functions (validation, pin layout)
 ```
 
 ## Key Concepts
