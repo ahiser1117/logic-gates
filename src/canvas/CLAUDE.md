@@ -12,6 +12,7 @@ Main React component wrapping the canvas element. Handles:
 - Viewport centering on init
 - Marquee selection (drag on empty space to select multiple components)
 - Double-click on board pin labels to edit them
+- Label edit textbox scales with zoom and tracks world position
 
 Key refs:
 - `dragStartPositions` - tracks component positions during drag
@@ -22,7 +23,7 @@ Pure drawing functions. Called every frame via `requestAnimationFrame`.
 
 Key functions:
 - `renderFrame()` - main entry, draws everything
-- `drawComponent()` - gate body, label, pins
+- `drawComponent()` - gate body, label, pins (receives simulation data for pin activation)
 - `drawWire()` - L-shaped wire routing
 - `drawInputBoard()` / `drawOutputBoard()` - board with header buttons, supports hover states
 
@@ -31,6 +32,12 @@ Layout constants (must match hitTest.ts):
 - `BOARD_HEADER_HEIGHT = 40`
 - `PIN_SPACING = 40`
 - `PIN_START_Y = 40`
+
+Pin styling:
+- All pins use uniform blue color (`boardPin`), turn green when active
+- Pins are 8px radius (10px when hovered) with hover ring
+- Board pins positioned at board edges (±BOARD_WIDTH/2)
+- Component pins show activation state based on connected wire values
 
 Button hover colors defined in `COLORS` object (e.g., `addButtonHover`, `removeButtonHover`, `toggleOnHover`).
 

@@ -82,7 +82,7 @@ export function renderFrame(
   // Draw components
   for (const component of circuit.components) {
     const selected = ui.selection.components.has(component.id)
-    drawComponent(ctx, component, selected, ui, customComponents)
+    drawComponent(ctx, component, selected, ui, circuit, simulation, customComponents)
   }
 
   // Draw marquee selection
@@ -96,6 +96,8 @@ function drawComponent(
   component: Component,
   selected: boolean,
   ui: UIState,
+  circuit: Circuit,
+  simulation: SimulationResult,
   customComponents?: Map<CustomComponentId, CustomComponentDefinition>
 ) {
   const def = getComponentDefinition(component.type, customComponents)
@@ -145,29 +147,39 @@ function drawComponent(
     const isHovered =
       ui.hoveredComponentId === component.id && ui.hoveredPinIndex === pin.index
 
+    // Find wire connected to this pin and get its value
+    let pinActive = false
+    for (const wire of circuit.wires) {
+      const isConnected =
+        (wire.source.type === 'component' &&
+          wire.source.componentId === component.id &&
+          wire.source.pinIndex === pin.index) ||
+        (wire.target.type === 'component' &&
+          wire.target.componentId === component.id &&
+          wire.target.pinIndex === pin.index)
+      if (isConnected) {
+        pinActive = simulation.wireValues.get(wire.id) ?? false
+        break
+      }
+    }
+
+    const pinRadius = isHovered ? 10 * scale : 8 * scale
     ctx.beginPath()
-    ctx.arc(pinX, pinY, 5 * scale, 0, Math.PI * 2)
-    ctx.fillStyle = isHovered
-      ? COLORS.pinHovered
-      : pin.direction === 'input'
-      ? COLORS.pinInput
-      : COLORS.pinOutput
+    ctx.arc(pinX, pinY, pinRadius, 0, Math.PI * 2)
+    ctx.fillStyle = isHovered ? COLORS.pinHovered : pinActive ? COLORS.toggleOn : COLORS.boardPin
     ctx.fill()
 
-    // Draw pin labels
-    if (!isCustom) {
-      // Primitive gates: always show small labels next to pins
-      ctx.fillStyle = COLORS.textMuted
-      ctx.font = `${8 * scale}px sans-serif`
-      ctx.textBaseline = 'middle'
-      if (pin.direction === 'input') {
-        ctx.textAlign = 'left'
-        ctx.fillText(pin.name, pinX + 8 * scale, pinY)
-      } else {
-        ctx.textAlign = 'right'
-        ctx.fillText(pin.name, pinX - 8 * scale, pinY)
-      }
-    } else if (isHovered) {
+    // Draw hover ring
+    if (isHovered) {
+      ctx.strokeStyle = COLORS.pinHovered
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(pinX, pinY, 12 * scale, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
+    // Draw pin label tooltip for custom components on hover
+    if (isCustom && isHovered) {
       // Custom components: show label tooltip on hover
       ctx.fillStyle = '#1e293b'
       ctx.strokeStyle = COLORS.customGateBorder
@@ -255,16 +267,16 @@ function getWireEndpoint(
 
     const { x: boardX, y: boardY } = circuit.inputBoard
     const pinY = boardY + PIN_START_Y + input.order * PIN_SPACING
-    // Pin is on right side of input board at +35 from center
-    return worldToScreen(boardX + 35, pinY, ui.viewport)
+    // Pin is on right side of input board at edge
+    return worldToScreen(boardX + BOARD_WIDTH / 2, pinY, ui.viewport)
   } else if (endpoint.type === 'output') {
     const output = circuit.outputs.find((o) => o.id === endpoint.outputId)
     if (!output) return null
 
     const { x: boardX, y: boardY } = circuit.outputBoard
     const pinY = boardY + PIN_START_Y + output.order * PIN_SPACING
-    // Pin is on left side of output board at -35 from center
-    return worldToScreen(boardX - 35, pinY, ui.viewport)
+    // Pin is on left side of output board at edge
+    return worldToScreen(boardX - BOARD_WIDTH / 2, pinY, ui.viewport)
   }
 
   return null
@@ -301,14 +313,14 @@ function drawWiringPreview(
     if (input) {
       const { x: boardX, y: boardY } = circuit.inputBoard
       const pinY = boardY + PIN_START_Y + input.order * PIN_SPACING
-      start = worldToScreen(boardX + 35, pinY, ui.viewport)
+      start = worldToScreen(boardX + BOARD_WIDTH / 2, pinY, ui.viewport)
     }
   } else if (startPin.type === 'output') {
     const output = circuit.outputs.find((o) => o.id === startPin.outputId)
     if (output) {
       const { x: boardX, y: boardY } = circuit.outputBoard
       const pinY = boardY + PIN_START_Y + output.order * PIN_SPACING
-      start = worldToScreen(boardX - 35, pinY, ui.viewport)
+      start = worldToScreen(boardX - BOARD_WIDTH / 2, pinY, ui.viewport)
     }
   }
 
@@ -367,7 +379,7 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
   const isAddHovered = hoveredButton === 'input-add'
 
   // Draw "-" button (left)
-  const minusBtnX = boardScreen.x - 30 * scale
+  const minusBtnX = boardScreen.x - 34 * scale
   ctx.beginPath()
   ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
   ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
@@ -385,7 +397,7 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
   ctx.fillText('INPUTS', boardScreen.x, headerY)
 
   // Draw "+" button (right)
-  const plusBtnX = boardScreen.x + 30 * scale
+  const plusBtnX = boardScreen.x + 34 * scale
   ctx.beginPath()
   ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
   ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
@@ -404,7 +416,7 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
     const isToggleHovered = typeof hoveredButton === 'object' && hoveredButton?.type === 'input-toggle' && hoveredButton.inputId === input.id
 
     // Draw toggle button (left side)
-    const toggleX = screen.x - 20 * scale
+    const toggleX = screen.x - 34 * scale
     ctx.beginPath()
     ctx.arc(toggleX, screen.y, 10 * scale, 0, Math.PI * 2)
     if (isToggleHovered) {
@@ -421,15 +433,33 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
     ctx.textBaseline = 'middle'
     ctx.fillText(input.value ? '1' : '0', toggleX, screen.y)
 
-    // Draw label (center)
+    // Draw label box outline and label (between toggle and pin, left-justified)
+    const labelBoxX = screen.x - 20 * scale
+    const labelBoxWidth = 52 * scale
+    const labelBoxHeight = 14 * scale
+    ctx.strokeStyle = 'rgba(71, 85, 105, 0.5)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight, 2 * scale)
+    ctx.stroke()
+
+    // Clip text to label box
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight)
+    ctx.clip()
+
     ctx.fillStyle = COLORS.textMuted
     ctx.font = `${9 * scale}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.fillText(input.label, screen.x, screen.y)
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(input.label, labelBoxX + 3 * scale, screen.y)
+
+    ctx.restore()
 
     // Draw pin (right side, for wiring)
-    const pinX = screen.x + 35 * scale
-    const pinRadius = isHovered ? 7 * scale : 5 * scale
+    const pinX = screen.x + (BOARD_WIDTH / 2) * scale
+    const pinRadius = isHovered ? 10 * scale : 8 * scale
     ctx.beginPath()
     ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
     ctx.fillStyle = isHovered ? COLORS.pinHovered : input.value ? COLORS.toggleOn : COLORS.boardPin
@@ -440,7 +470,7 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
       ctx.strokeStyle = COLORS.pinHovered
       ctx.lineWidth = 2
       ctx.beginPath()
-      ctx.arc(pinX, screen.y, 10 * scale, 0, Math.PI * 2)
+      ctx.arc(pinX, screen.y, 12 * scale, 0, Math.PI * 2)
       ctx.stroke()
     }
   }
@@ -486,7 +516,7 @@ function drawOutputBoard(
   const isAddHovered = hoveredButton === 'output-add'
 
   // Draw "-" button (left)
-  const minusBtnX = boardScreen.x - 30 * scale
+  const minusBtnX = boardScreen.x - 34 * scale
   ctx.beginPath()
   ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
   ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
@@ -504,7 +534,7 @@ function drawOutputBoard(
   ctx.fillText('OUTPUTS', boardScreen.x, headerY)
 
   // Draw "+" button (right)
-  const plusBtnX = boardScreen.x + 30 * scale
+  const plusBtnX = boardScreen.x + 34 * scale
   ctx.beginPath()
   ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
   ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
@@ -523,8 +553,8 @@ function drawOutputBoard(
     const isHovered = ui.hoveredOutputId === output.id
 
     // Draw pin (left side, for wiring)
-    const pinX = screen.x - 35 * scale
-    const pinRadius = isHovered ? 7 * scale : 5 * scale
+    const pinX = screen.x - (BOARD_WIDTH / 2) * scale
+    const pinRadius = isHovered ? 10 * scale : 8 * scale
     ctx.beginPath()
     ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
     ctx.fillStyle = isHovered ? COLORS.pinHovered : value ? COLORS.toggleOn : COLORS.boardPin
@@ -535,18 +565,36 @@ function drawOutputBoard(
       ctx.strokeStyle = COLORS.pinHovered
       ctx.lineWidth = 2
       ctx.beginPath()
-      ctx.arc(pinX, screen.y, 10 * scale, 0, Math.PI * 2)
+      ctx.arc(pinX, screen.y, 12 * scale, 0, Math.PI * 2)
       ctx.stroke()
     }
 
-    // Draw label (center)
+    // Draw label box outline and label (between pin and indicator, right-justified)
+    const labelBoxWidth = 52 * scale
+    const labelBoxHeight = 14 * scale
+    const labelBoxX = screen.x - 32 * scale
+    ctx.strokeStyle = 'rgba(71, 85, 105, 0.5)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight, 2 * scale)
+    ctx.stroke()
+
+    // Clip text to label box
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight)
+    ctx.clip()
+
     ctx.fillStyle = COLORS.textMuted
     ctx.font = `${9 * scale}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.fillText(output.label, screen.x, screen.y)
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(output.label, labelBoxX + labelBoxWidth - 3 * scale, screen.y)
+
+    ctx.restore()
 
     // Draw value indicator (right side)
-    const indicatorX = screen.x + 20 * scale
+    const indicatorX = screen.x + 34 * scale
     ctx.beginPath()
     ctx.arc(indicatorX, screen.y, 10 * scale, 0, Math.PI * 2)
     ctx.fillStyle = value ? COLORS.toggleOn : COLORS.toggleOff

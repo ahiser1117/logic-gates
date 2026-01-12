@@ -48,7 +48,7 @@ ui: {
 ### Circuit
 - `addComponent(type, x, y)` - add gate or custom component
 - `moveComponent(id, x, y)` - reposition gate
-- `addWire(source, target)` - connect pins
+- `addWire(source, target)` - connect pins (auto-replaces existing connection to target)
 - `addInput()` / `removeInput(id)` - manage input board
 - `addOutput()` / `removeOutput(id)` - manage output board
 - `renameInput(id, label)` / `renameOutput(id, label)` - rename board pins

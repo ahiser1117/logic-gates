@@ -16,8 +16,8 @@ interface LabelEdit {
   type: 'input' | 'output'
   id: InputId | OutputId
   label: string
-  screenX: number
-  screenY: number
+  worldX: number
+  worldY: number
 }
 
 export function CanvasWorkspace() {
@@ -492,34 +492,32 @@ export function CanvasWorkspace() {
       if (hit.type === 'input-label' && hit.inputId !== undefined) {
         const input = circuit.inputs.find((i) => i.id === hit.inputId)
         if (input) {
-          // Calculate screen position of the label
+          // Store world position of the label
           const pinWorldY = circuit.inputBoard.y + PIN_START_Y + input.order * PIN_SPACING
-          const screen = worldToScreen(circuit.inputBoard.x, pinWorldY, ui.viewport)
           setLabelEdit({
             type: 'input',
             id: hit.inputId,
             label: input.label,
-            screenX: screen.x,
-            screenY: screen.y,
+            worldX: circuit.inputBoard.x,
+            worldY: pinWorldY,
           })
         }
       } else if (hit.type === 'output-label' && hit.outputId !== undefined) {
         const output = circuit.outputs.find((o) => o.id === hit.outputId)
         if (output) {
-          // Calculate screen position of the label
+          // Store world position of the label
           const pinWorldY = circuit.outputBoard.y + PIN_START_Y + output.order * PIN_SPACING
-          const screen = worldToScreen(circuit.outputBoard.x, pinWorldY, ui.viewport)
           setLabelEdit({
             type: 'output',
             id: hit.outputId,
             label: output.label,
-            screenX: screen.x,
-            screenY: screen.y,
+            worldX: circuit.outputBoard.x,
+            worldY: pinWorldY,
           })
         }
       }
     },
-    [getScreenCoords, circuit, customComponents, ui.viewport]
+    [getScreenCoords, circuit, customComponents]
   )
 
   // Handle label edit completion
@@ -606,27 +604,43 @@ export function CanvasWorkspace() {
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {labelEdit && (
-        <input
-          ref={labelInputRef}
-          type="text"
-          className="label-edit-input"
-          value={labelEdit.label}
-          onChange={(e) => setLabelEdit({ ...labelEdit, label: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              handleLabelEditComplete()
-            } else if (e.key === 'Escape') {
-              handleLabelEditCancel()
-            }
-          }}
-          onBlur={handleLabelEditComplete}
-          style={{
-            left: labelEdit.screenX,
-            top: labelEdit.screenY,
-          }}
-        />
-      )}
+      {labelEdit && (() => {
+        const screen = worldToScreen(labelEdit.worldX, labelEdit.worldY, ui.viewport)
+        const scale = ui.viewport.zoom
+        const labelBoxWidth = 52 * scale
+        const labelBoxHeight = 14 * scale
+        const isInput = labelEdit.type === 'input'
+        // Input: box starts at screen.x - 20, Output: box starts at screen.x - 32
+        const labelBoxX = isInput ? screen.x - 20 * scale : screen.x - 32 * scale
+        return (
+          <input
+            ref={labelInputRef}
+            type="text"
+            className="label-edit-input"
+            value={labelEdit.label}
+            onChange={(e) => setLabelEdit({ ...labelEdit, label: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleLabelEditComplete()
+              } else if (e.key === 'Escape') {
+                handleLabelEditCancel()
+              }
+            }}
+            onBlur={handleLabelEditComplete}
+            style={{
+              left: labelBoxX,
+              top: screen.y - labelBoxHeight / 2,
+              transform: 'none',
+              width: `${labelBoxWidth}px`,
+              height: `${labelBoxHeight}px`,
+              fontSize: `${9 * scale}px`,
+              padding: `0 ${3 * scale}px`,
+              borderRadius: `${2 * scale}px`,
+              textAlign: isInput ? 'left' : 'right',
+            }}
+          />
+        )
+      })()}
     </div>
   )
 }

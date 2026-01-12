@@ -3,7 +3,7 @@ import type { Viewport } from '../types'
 import { screenToWorld } from './grid'
 import { getComponentDefinition } from '../simulation'
 
-const PIN_HIT_RADIUS = 8
+const PIN_HIT_RADIUS = 12
 const WIRE_HIT_RADIUS = 6
 const BUTTON_RADIUS = 10
 const TOGGLE_RADIUS = 10
@@ -160,13 +160,13 @@ function hitTestInputBoard(worldX: number, worldY: number, circuit: Circuit, sca
 
   // Check header buttons first (fixed position)
   // "-" button (left of label)
-  const minusBtnX = boardX - 30
+  const minusBtnX = boardX - 34
   if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'input-remove-button' }
   }
 
   // "+" button (right of label)
-  const plusBtnX = boardX + 30
+  const plusBtnX = boardX + 34
   if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'input-add-button' }
   }
@@ -176,25 +176,26 @@ function hitTestInputBoard(worldX: number, worldY: number, circuit: Circuit, sca
     const pinY = boardY + PIN_START_Y + input.order * PIN_SPACING
 
     // Check toggle button (left side)
-    const toggleX = boardX - 20
+    const toggleX = boardX - 34
     if (distance(worldX, worldY, toggleX, pinY) < TOGGLE_RADIUS) {
       return { type: 'input-toggle', inputId: input.id }
     }
 
     // Check pin (right side, for wiring)
-    const pinX = boardX + 35
+    const pinX = boardX + BOARD_WIDTH / 2
     if (distance(worldX, worldY, pinX, pinY) < PIN_HIT_RADIUS / scale) {
       return { type: 'pin', pinType: 'input-board', inputId: input.id }
     }
 
-    // Check label area (center)
-    const labelHalfWidth = 20
-    const labelHalfHeight = 10
+    // Check label area (left-justified, starts at -20, width 52)
+    const labelBoxX = boardX - 20
+    const labelBoxWidth = 52
+    const labelBoxHeight = 14
     if (
-      worldX >= boardX - labelHalfWidth &&
-      worldX <= boardX + labelHalfWidth &&
-      worldY >= pinY - labelHalfHeight &&
-      worldY <= pinY + labelHalfHeight
+      worldX >= labelBoxX &&
+      worldX <= labelBoxX + labelBoxWidth &&
+      worldY >= pinY - labelBoxHeight / 2 &&
+      worldY <= pinY + labelBoxHeight / 2
     ) {
       return { type: 'input-label', inputId: input.id }
     }
@@ -234,13 +235,13 @@ function hitTestOutputBoard(worldX: number, worldY: number, circuit: Circuit, sc
 
   // Check header buttons first (fixed position)
   // "-" button (left of label)
-  const minusBtnX = boardX - 30
+  const minusBtnX = boardX - 34
   if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'output-remove-button' }
   }
 
   // "+" button (right of label)
-  const plusBtnX = boardX + 30
+  const plusBtnX = boardX + 34
   if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'output-add-button' }
   }
@@ -248,20 +249,21 @@ function hitTestOutputBoard(worldX: number, worldY: number, circuit: Circuit, sc
   // Check each output pin (left side, for wiring)
   for (const output of circuit.outputs) {
     const pinY = boardY + PIN_START_Y + output.order * PIN_SPACING
-    const pinX = boardX - 35
+    const pinX = boardX - BOARD_WIDTH / 2
 
     if (distance(worldX, worldY, pinX, pinY) < PIN_HIT_RADIUS / scale) {
       return { type: 'pin', pinType: 'output-board', outputId: output.id }
     }
 
-    // Check label area (center)
-    const labelHalfWidth = 20
-    const labelHalfHeight = 10
+    // Check label area (right-justified, starts at -32, width 52)
+    const labelBoxX = boardX - 32
+    const labelBoxWidth = 52
+    const labelBoxHeight = 14
     if (
-      worldX >= boardX - labelHalfWidth &&
-      worldX <= boardX + labelHalfWidth &&
-      worldY >= pinY - labelHalfHeight &&
-      worldY <= pinY + labelHalfHeight
+      worldX >= labelBoxX &&
+      worldX <= labelBoxX + labelBoxWidth &&
+      worldY >= pinY - labelBoxHeight / 2 &&
+      worldY <= pinY + labelBoxHeight / 2
     ) {
       return { type: 'output-label', outputId: output.id }
     }
@@ -305,7 +307,7 @@ function getWireEndpointWorld(
 
     const { x: boardX, y: boardY } = circuit.inputBoard
     return {
-      x: boardX + 35,
+      x: boardX + BOARD_WIDTH / 2,
       y: boardY + PIN_START_Y + input.order * PIN_SPACING,
     }
   } else if (endpoint.type === 'output') {
@@ -314,7 +316,7 @@ function getWireEndpointWorld(
 
     const { x: boardX, y: boardY } = circuit.outputBoard
     return {
-      x: boardX - 35,
+      x: boardX - BOARD_WIDTH / 2,
       y: boardY + PIN_START_Y + output.order * PIN_SPACING,
     }
   }

@@ -155,27 +155,20 @@ export const useStore = create<AppState>()(
     },
 
     addWire: (source, target) => {
-      // Validate: check for existing wire to same target
-      const state = get()
-      const existingWire = state.circuit.wires.find((w) => {
-        if (target.type === 'component') {
-          return (
-            w.target.type === 'component' &&
-            w.target.componentId === target.componentId &&
-            w.target.pinIndex === target.pinIndex
-          )
-        } else {
-          return w.target.type === 'output' && w.target.outputId === target.outputId
-        }
-      })
-
-      if (existingWire) {
-        console.warn('Target pin already has a connection')
-        return null
-      }
-
       const id = nextWireId++ as WireId
       set((state) => {
+        // Remove any existing wire to the same target (input pins can only have one connection)
+        state.circuit.wires = state.circuit.wires.filter((w) => {
+          if (target.type === 'component') {
+            return !(
+              w.target.type === 'component' &&
+              w.target.componentId === target.componentId &&
+              w.target.pinIndex === target.pinIndex
+            )
+          } else {
+            return !(w.target.type === 'output' && w.target.outputId === target.outputId)
+          }
+        })
         state.circuit.wires.push({ id, source, target })
       })
       return id
