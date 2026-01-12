@@ -40,6 +40,15 @@ export interface DragState {
   }
 }
 
+// === Hovered Button Types ===
+export type HoveredButton =
+  | 'input-add'
+  | 'input-remove'
+  | 'output-add'
+  | 'output-remove'
+  | { type: 'input-toggle'; inputId: InputId }
+  | null
+
 // === Full UI State ===
 export interface UIState {
   viewport: Viewport
@@ -50,6 +59,7 @@ export interface UIState {
   hoveredPinIndex: number | null
   hoveredInputId: InputId | null
   hoveredOutputId: OutputId | null
+  hoveredButton: HoveredButton
 }
 
 // === Initial UI State ===
@@ -78,4 +88,5 @@ export const initialUIState: UIState = {
   hoveredPinIndex: null,
   hoveredInputId: null,
   hoveredOutputId: null,
+  hoveredButton: null,
 }

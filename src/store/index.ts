@@ -19,7 +19,7 @@ import type {
 import { createCustomComponentId } from '../types/circuit'
 import { validateCircuitForComponent } from '../utils/validation'
 import { computePinLayout } from '../utils/pinLayout'
-import type { UIState, Viewport, PinRef, DragState } from '../types/ui'
+import type { UIState, Viewport, PinRef, DragState, HoveredButton } from '../types/ui'
 import { initialUIState } from '../types/ui'
 
 // === ID Counters ===
@@ -88,6 +88,7 @@ interface AppState {
 
   setHoveredPin: (componentId: ComponentId | null, pinIndex: number | null) => void
   setHoveredBoardPin: (inputId: InputId | null, outputId: OutputId | null) => void
+  setHoveredButton: (button: HoveredButton) => void
 }
 
 // === Initial Circuit State ===
@@ -577,6 +578,12 @@ export const useStore = create<AppState>()(
       set((state) => {
         state.ui.hoveredInputId = inputId
         state.ui.hoveredOutputId = outputId
+      })
+    },
+
+    setHoveredButton: (button) => {
+      set((state) => {
+        state.ui.hoveredButton = button
       })
     },
   }))

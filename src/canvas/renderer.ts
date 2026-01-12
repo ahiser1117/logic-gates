@@ -33,8 +33,12 @@ const COLORS = {
   boardBorder: '#334155',
   toggleOff: '#374151',
   toggleOn: '#22c55e',
+  toggleOffHover: '#4b5563',
+  toggleOnHover: '#4ade80',
   addButton: '#475569',
+  addButtonHover: '#64748b',
   removeButton: '#dc2626',
+  removeButtonHover: '#ef4444',
   text: '#e2e8f0',
   textMuted: '#94a3b8',
 }
@@ -59,10 +63,10 @@ export function renderFrame(
   drawGrid(ctx, ui.viewport, width / dpr, height / dpr)
 
   // Draw input board (left)
-  drawInputBoard(ctx, circuit, ui)
+  drawInputBoard(ctx, circuit, ui, ui.hoveredButton)
 
   // Draw output board (right)
-  drawOutputBoard(ctx, circuit, ui, simulation.outputValues)
+  drawOutputBoard(ctx, circuit, ui, simulation.outputValues, ui.hoveredButton)
 
   // Draw wires
   for (const wire of circuit.wires) {
@@ -329,7 +333,7 @@ function drawWiringPreview(
   ctx.setLineDash([])
 }
 
-function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIState) {
+function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIState, hoveredButton: UIState['hoveredButton']) {
   const { x: boardX, y: boardY } = circuit.inputBoard
   const inputCount = circuit.inputs.length
   const scale = ui.viewport.zoom
@@ -359,12 +363,14 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
 
   // Draw header with label and +/- buttons
   const headerY = boardScreen.y
+  const isRemoveHovered = hoveredButton === 'input-remove'
+  const isAddHovered = hoveredButton === 'input-add'
 
   // Draw "-" button (left)
   const minusBtnX = boardScreen.x - 30 * scale
   ctx.beginPath()
   ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = COLORS.removeButton
+  ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
   ctx.fill()
   ctx.fillStyle = COLORS.text
   ctx.font = `bold ${14 * scale}px sans-serif`
@@ -382,7 +388,7 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
   const plusBtnX = boardScreen.x + 30 * scale
   ctx.beginPath()
   ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = COLORS.addButton
+  ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
   ctx.fill()
   ctx.fillStyle = COLORS.text
   ctx.font = `bold ${14 * scale}px sans-serif`
@@ -395,12 +401,17 @@ function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIS
     const pinWorldY = boardY + PIN_START_Y + input.order * PIN_SPACING
     const screen = worldToScreen(boardX, pinWorldY, ui.viewport)
     const isHovered = ui.hoveredInputId === input.id
+    const isToggleHovered = typeof hoveredButton === 'object' && hoveredButton?.type === 'input-toggle' && hoveredButton.inputId === input.id
 
     // Draw toggle button (left side)
     const toggleX = screen.x - 20 * scale
     ctx.beginPath()
     ctx.arc(toggleX, screen.y, 10 * scale, 0, Math.PI * 2)
-    ctx.fillStyle = input.value ? COLORS.toggleOn : COLORS.toggleOff
+    if (isToggleHovered) {
+      ctx.fillStyle = input.value ? COLORS.toggleOnHover : COLORS.toggleOffHover
+    } else {
+      ctx.fillStyle = input.value ? COLORS.toggleOn : COLORS.toggleOff
+    }
     ctx.fill()
 
     // Draw toggle value
@@ -439,7 +450,8 @@ function drawOutputBoard(
   ctx: CanvasRenderingContext2D,
   circuit: Circuit,
   ui: UIState,
-  outputValues: Map<import('../types').OutputId, boolean>
+  outputValues: Map<import('../types').OutputId, boolean>,
+  hoveredButton: UIState['hoveredButton']
 ) {
   const { x: boardX, y: boardY } = circuit.outputBoard
   const outputCount = circuit.outputs.length
@@ -470,12 +482,14 @@ function drawOutputBoard(
 
   // Draw header with label and +/- buttons
   const headerY = boardScreen.y
+  const isRemoveHovered = hoveredButton === 'output-remove'
+  const isAddHovered = hoveredButton === 'output-add'
 
   // Draw "-" button (left)
   const minusBtnX = boardScreen.x - 30 * scale
   ctx.beginPath()
   ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = COLORS.removeButton
+  ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
   ctx.fill()
   ctx.fillStyle = COLORS.text
   ctx.font = `bold ${14 * scale}px sans-serif`
@@ -493,7 +507,7 @@ function drawOutputBoard(
   const plusBtnX = boardScreen.x + 30 * scale
   ctx.beginPath()
   ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = COLORS.addButton
+  ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
   ctx.fill()
   ctx.fillStyle = COLORS.text
   ctx.font = `bold ${14 * scale}px sans-serif`

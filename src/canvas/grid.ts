@@ -19,32 +19,38 @@ export function drawGrid(
   ctx.strokeStyle = GRID_COLOR
   ctx.lineWidth = 1
 
-  // Calculate visible area in world coordinates
+  // Calculate visible area in screen coordinates
   const startX = Math.floor(-panX / scaledGridSize) * scaledGridSize + (panX % scaledGridSize)
   const startY = Math.floor(-panY / scaledGridSize) * scaledGridSize + (panY % scaledGridSize)
 
+  // Calculate the starting grid line index based on where startX/startY actually are
+  const startGridX = Math.round((startX - panX) / zoom / GRID_SIZE)
+  const startGridY = Math.round((startY - panY) / zoom / GRID_SIZE)
+
   // Draw vertical lines
+  let gridIndexX = startGridX
   for (let x = startX; x < width; x += scaledGridSize) {
-    const worldX = (x - panX) / zoom
-    const isMajor = Math.abs(worldX % (GRID_SIZE * 5)) < 1
+    const isMajor = gridIndexX % 5 === 0
 
     ctx.strokeStyle = isMajor ? GRID_COLOR_MAJOR : GRID_COLOR
     ctx.beginPath()
     ctx.moveTo(x, 0)
     ctx.lineTo(x, height)
     ctx.stroke()
+    gridIndexX++
   }
 
   // Draw horizontal lines
+  let gridIndexY = startGridY
   for (let y = startY; y < height; y += scaledGridSize) {
-    const worldY = (y - panY) / zoom
-    const isMajor = Math.abs(worldY % (GRID_SIZE * 5)) < 1
+    const isMajor = gridIndexY % 5 === 0
 
     ctx.strokeStyle = isMajor ? GRID_COLOR_MAJOR : GRID_COLOR
     ctx.beginPath()
     ctx.moveTo(0, y)
     ctx.lineTo(width, y)
     ctx.stroke()
+    gridIndexY++
   }
 }
 

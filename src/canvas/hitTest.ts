@@ -161,13 +161,13 @@ function hitTestInputBoard(worldX: number, worldY: number, circuit: Circuit, sca
   // Check header buttons first (fixed position)
   // "-" button (left of label)
   const minusBtnX = boardX - 30
-  if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS / scale) {
+  if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'input-remove-button' }
   }
 
   // "+" button (right of label)
   const plusBtnX = boardX + 30
-  if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS / scale) {
+  if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'input-add-button' }
   }
 
@@ -177,7 +177,7 @@ function hitTestInputBoard(worldX: number, worldY: number, circuit: Circuit, sca
 
     // Check toggle button (left side)
     const toggleX = boardX - 20
-    if (distance(worldX, worldY, toggleX, pinY) < TOGGLE_RADIUS / scale) {
+    if (distance(worldX, worldY, toggleX, pinY) < TOGGLE_RADIUS) {
       return { type: 'input-toggle', inputId: input.id }
     }
 
@@ -235,13 +235,13 @@ function hitTestOutputBoard(worldX: number, worldY: number, circuit: Circuit, sc
   // Check header buttons first (fixed position)
   // "-" button (left of label)
   const minusBtnX = boardX - 30
-  if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS / scale) {
+  if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'output-remove-button' }
   }
 
   // "+" button (right of label)
   const plusBtnX = boardX + 30
-  if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS / scale) {
+  if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'output-add-button' }
   }
 

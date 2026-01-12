@@ -56,6 +56,7 @@ export function CanvasWorkspace() {
   const renameOutput = useStore((s) => s.renameOutput)
   const moveInputBoard = useStore((s) => s.moveInputBoard)
   const moveOutputBoard = useStore((s) => s.moveOutputBoard)
+  const setHoveredButton = useStore((s) => s.setHoveredButton)
 
   // Focus label input when editing starts
   useEffect(() => {
@@ -63,7 +64,7 @@ export function CanvasWorkspace() {
       labelInputRef.current.focus()
       labelInputRef.current.select()
     }
-  }, [labelEdit])
+  }, [labelEdit?.id])
 
   // Handle canvas resize and center viewport initially
   const hasInitialized = useRef(false)
@@ -331,15 +332,39 @@ export function CanvasWorkspace() {
       if (hit.type === 'pin' && hit.componentId !== undefined) {
         setHoveredPin(hit.componentId, hit.pinIndex!)
         setHoveredBoardPin(null, null)
+        setHoveredButton(null)
       } else if (hit.type === 'pin' && hit.pinType === 'input-board') {
         setHoveredPin(null, null)
         setHoveredBoardPin(hit.inputId!, null)
+        setHoveredButton(null)
       } else if (hit.type === 'pin' && hit.pinType === 'output-board') {
         setHoveredPin(null, null)
         setHoveredBoardPin(null, hit.outputId!)
+        setHoveredButton(null)
+      } else if (hit.type === 'input-add-button') {
+        setHoveredPin(null, null)
+        setHoveredBoardPin(null, null)
+        setHoveredButton('input-add')
+      } else if (hit.type === 'input-remove-button') {
+        setHoveredPin(null, null)
+        setHoveredBoardPin(null, null)
+        setHoveredButton('input-remove')
+      } else if (hit.type === 'output-add-button') {
+        setHoveredPin(null, null)
+        setHoveredBoardPin(null, null)
+        setHoveredButton('output-add')
+      } else if (hit.type === 'output-remove-button') {
+        setHoveredPin(null, null)
+        setHoveredBoardPin(null, null)
+        setHoveredButton('output-remove')
+      } else if (hit.type === 'input-toggle' && hit.inputId !== undefined) {
+        setHoveredPin(null, null)
+        setHoveredBoardPin(null, null)
+        setHoveredButton({ type: 'input-toggle', inputId: hit.inputId })
       } else {
         setHoveredPin(null, null)
         setHoveredBoardPin(null, null)
+        setHoveredButton(null)
       }
 
       // Handle drag
@@ -377,7 +402,7 @@ export function CanvasWorkspace() {
         setDrag({ currentX: x, currentY: y })
       }
     },
-    [getScreenCoords, circuit, customComponents, ui.viewport, ui.drag, ui.wiring.active, pan, setDrag, setHoveredPin, setHoveredBoardPin, moveComponent, moveInputBoard, moveOutputBoard]
+    [getScreenCoords, circuit, customComponents, ui.viewport, ui.drag, ui.wiring.active, pan, setDrag, setHoveredPin, setHoveredBoardPin, setHoveredButton, moveComponent, moveInputBoard, moveOutputBoard]
   )
 
   const handleMouseUp = useCallback(
