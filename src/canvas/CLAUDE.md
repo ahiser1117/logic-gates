@@ -24,7 +24,7 @@ Key functions:
 - `renderFrame()` - main entry, draws everything
 - `drawComponent()` - gate body, label, pins
 - `drawWire()` - L-shaped wire routing
-- `drawInputBoard()` / `drawOutputBoard()` - board with header buttons
+- `drawInputBoard()` / `drawOutputBoard()` - board with header buttons, supports hover states
 
 Layout constants (must match hitTest.ts):
 - `BOARD_WIDTH = 100`
@@ -32,17 +32,23 @@ Layout constants (must match hitTest.ts):
 - `PIN_SPACING = 40`
 - `PIN_START_Y = 40`
 
+Button hover colors defined in `COLORS` object (e.g., `addButtonHover`, `removeButtonHover`, `toggleOnHover`).
+
 ### hitTest.ts
 Determines what the user clicked. Returns `HitResult` with type and IDs.
 
 Hit types: `none`, `component`, `pin`, `wire`, `input-board`, `output-board`, `input-add-button`, `input-remove-button`, `output-add-button`, `output-remove-button`, `input-toggle`, `input-label`, `output-label`
+
+**Important**: Board button hitboxes use fixed world coordinates (not scaled by zoom) to match their visual size at any zoom level.
 
 ### grid.ts
 Coordinate transforms and grid drawing.
 - `worldToScreen(x, y, viewport)` - world to screen coords
 - `screenToWorld(x, y, viewport)` - screen to world coords
 - `snapToGrid(value, gridSize)` - snap to grid
-- `drawGrid()` - background grid pattern
+- `drawGrid()` - background grid with minor lines every `GRID_SIZE` (20) and major lines every 5th line
+
+Grid uses integer grid indices (not floating-point modulo) to reliably detect major lines.
 
 ## Coordinate System
 - World coords: logical circuit positions

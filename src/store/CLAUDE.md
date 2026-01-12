@@ -39,6 +39,7 @@ ui: {
   wiring: { active, startPin }
   hoveredComponentId, hoveredPinIndex
   hoveredInputId, hoveredOutputId  // Board pin hover state
+  hoveredButton                     // Board button hover state
 }
 ```
 
@@ -66,6 +67,7 @@ ui: {
 - `startWiring(pin)` / `completeWiring(pin)` / `cancelWiring()` - wire creation
 - `setHoveredPin(componentId, pinIndex)` - component pin hover
 - `setHoveredBoardPin(inputId, outputId)` - board pin hover
+- `setHoveredButton(button)` - board button hover (add/remove/toggle)
 
 ## ID Generation
 Uses module-level counters cast to branded types:

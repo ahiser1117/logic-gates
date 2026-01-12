@@ -54,6 +54,14 @@ UI state types.
 - `Viewport` - panX, panY, zoom
 - `DragState` - type + coordinates
 - `PinRef` - union type for referencing any pin
+- `HoveredButton` - union type for board button hover states:
+  ```typescript
+  type HoveredButton =
+    | 'input-add' | 'input-remove'
+    | 'output-add' | 'output-remove'
+    | { type: 'input-toggle'; inputId: InputId }
+    | null
+  ```
 - `UIState` - full UI state shape
 - `initialUIState` - default values
 
