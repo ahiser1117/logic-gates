@@ -6,6 +6,7 @@ import type {
   WireTarget,
   CustomComponentId,
   CustomComponentDefinition,
+  Point,
 } from '../types'
 import { getComponentDefinition } from '../simulation'
 
@@ -16,10 +17,8 @@ const BOARD_WIDTH = 100
 const PIN_SPACING = 40
 const PIN_START_Y = 40
 
-export interface Point {
-  x: number
-  y: number
-}
+// Re-export Point for backwards compatibility
+export type { Point }
 
 // Path cache - stores computed paths per wire
 const pathCache = new Map<WireId, Point[]>()
@@ -84,6 +83,7 @@ export function computeWirePath(
 
 /**
  * Compute a single wire's path using L-shape routing.
+ * If the wire has custom waypoints, use those instead of auto-routing.
  */
 function computeSingleWirePath(
   wire: Wire,
@@ -96,6 +96,13 @@ function computeSingleWirePath(
 
   if (!start || !end) {
     return []
+  }
+
+  // If the wire has custom waypoints, use those
+  if (wire.waypoints && wire.waypoints.length > 0) {
+    // Waypoints include everything between (and including) the exit/entry points
+    // We just need to add the actual pin positions at start and end
+    return [start, ...wire.waypoints, end]
   }
 
   // Calculate exit/entry points - go straight out from pins
@@ -225,5 +232,5 @@ function simplifyPath(path: Point[]): Point[] {
   return simplified
 }
 
-// Export getWireEndpointWorld for use in renderer
-export { getWireEndpointWorld }
+// Export utilities for use in renderer and interactions
+export { getWireEndpointWorld, getExitPoint, getEntryPoint, PIN_EXIT_DISTANCE, GRID_STEP }

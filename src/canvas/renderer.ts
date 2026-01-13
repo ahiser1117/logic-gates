@@ -45,6 +45,9 @@ const COLORS = {
   removeButtonHover: '#ef4444',
   text: '#e2e8f0',
   textMuted: '#94a3b8',
+  // Wire handle colors
+  handleFill: '#ffffff',
+  handleBorder: '#f59e0b',
 }
 
 export function renderFrame(
@@ -82,6 +85,9 @@ export function renderFrame(
   if (ui.wiring.active && ui.wiring.startPin) {
     drawWiringPreview(ctx, ui, circuit, customComponents)
   }
+
+  // Draw wire handles for selected wires
+  drawWireHandles(ctx, circuit, ui, customComponents)
 
   // Draw board pins on top of wires
   drawInputBoard(ctx, circuit, ui, ui.hoveredButton, true)
@@ -262,6 +268,64 @@ function drawWire(
   ctx.lineWidth = (selected ? 4 : 3) * zoom
   buildPath()
   ctx.stroke()
+}
+
+// Handle dimensions in world units (from hitTest.ts)
+const HANDLE_WIDTH = 16
+const HANDLE_HEIGHT = 8
+
+function drawWireHandles(
+  ctx: CanvasRenderingContext2D,
+  circuit: Circuit,
+  ui: UIState,
+  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
+) {
+  const zoom = ui.viewport.zoom
+
+  // Only draw handles for selected wires
+  for (const wire of circuit.wires) {
+    if (!ui.selection.wires.has(wire.id)) continue
+
+    const path = computeWirePath(wire, circuit, customComponents)
+    if (path.length < 2) continue
+
+    // Draw handle at midpoint of each segment
+    for (let i = 0; i < path.length - 1; i++) {
+      const p1 = path[i]
+      const p2 = path[i + 1]
+      if (!p1 || !p2) continue
+
+      // Calculate midpoint
+      const midX = (p1.x + p2.x) / 2
+      const midY = (p1.y + p2.y) / 2
+
+      // Determine if segment is horizontal or vertical
+      const isHorizontal = Math.abs(p2.y - p1.y) < Math.abs(p2.x - p1.x)
+
+      // Handle dimensions based on orientation
+      const handleW = (isHorizontal ? HANDLE_WIDTH : HANDLE_HEIGHT) * zoom
+      const handleH = (isHorizontal ? HANDLE_HEIGHT : HANDLE_WIDTH) * zoom
+
+      // Convert to screen coordinates
+      const screen = worldToScreen(midX, midY, ui.viewport)
+
+      // Draw capsule (rounded rectangle)
+      ctx.fillStyle = COLORS.handleFill
+      ctx.strokeStyle = COLORS.handleBorder
+      ctx.lineWidth = 2
+
+      ctx.beginPath()
+      ctx.roundRect(
+        screen.x - handleW / 2,
+        screen.y - handleH / 2,
+        handleW,
+        handleH,
+        Math.min(handleW, handleH) / 2 // Full radius for capsule shape
+      )
+      ctx.fill()
+      ctx.stroke()
+    }
+  }
 }
 
 function drawWiringPreview(

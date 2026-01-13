@@ -6,7 +6,14 @@ import {
   clearPathsForInputBoard,
   clearPathsForOutputBoard,
   clearWirePath,
+  getWireEndpointWorld,
+  GRID_STEP,
 } from '../canvas/wirePathfinding'
+
+// Snap a value to the grid
+function snapToGrid(value: number, gridSize: number): number {
+  return Math.round(value / gridSize) * gridSize
+}
 
 // Enable Immer support for Map and Set
 enableMapSet()
@@ -21,6 +28,7 @@ import type {
   ComponentType,
   CustomComponentId,
   CustomComponentDefinition,
+  Point,
 } from '../types/circuit'
 import { createCustomComponentId } from '../types/circuit'
 import { validateCircuitForComponent } from '../utils/validation'
@@ -55,6 +63,7 @@ interface AppState {
 
   addWire: (source: WireSource, target: WireTarget) => WireId | null
   removeWire: (id: WireId) => void
+  updateWireWaypoints: (id: WireId, waypoints: Point[] | undefined) => void
 
   addInput: (label?: string) => InputId
   removeInput: (id: InputId) => void
@@ -142,8 +151,70 @@ export const useStore = create<AppState>()(
       set((state) => {
         const component = state.circuit.components.find((c) => c.id === id)
         if (component) {
+          // Get old endpoint positions for connected wires BEFORE moving
+          const wireEndpoints = new Map<WireId, { oldSource: Point | null; oldTarget: Point | null }>()
+          for (const wire of state.circuit.wires) {
+            if (!wire.waypoints || wire.waypoints.length === 0) continue
+            const isSource = wire.source.type === 'component' && wire.source.componentId === id
+            const isTarget = wire.target.type === 'component' && wire.target.componentId === id
+            if (isSource || isTarget) {
+              wireEndpoints.set(wire.id, {
+                oldSource: getWireEndpointWorld(wire.source, state.circuit, state.customComponents),
+                oldTarget: getWireEndpointWorld(wire.target, state.circuit, state.customComponents),
+              })
+            }
+          }
+
+          // Move the component
           component.x = x
           component.y = y
+
+          // Adjust waypoints for connected wires using proportional positioning
+          for (const wire of state.circuit.wires) {
+            if (!wire.waypoints || wire.waypoints.length === 0) continue
+
+            const endpoints = wireEndpoints.get(wire.id)
+            if (!endpoints) continue
+
+            const { oldSource, oldTarget } = endpoints
+            if (!oldSource || !oldTarget) continue
+
+            // Get new endpoint positions AFTER moving
+            const newSource = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
+            const newTarget = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
+            if (!newSource || !newTarget) continue
+
+            // Calculate the proportional position of each waypoint and adjust
+            wire.waypoints = wire.waypoints.map((wp) => {
+              // Calculate X proportion (where along the X axis is this waypoint?)
+              const oldDx = oldTarget.x - oldSource.x
+              const newDx = newTarget.x - newSource.x
+              let newX: number
+              if (Math.abs(oldDx) < 1) {
+                // Source and target were vertically aligned, use delta from source
+                newX = wp.x + (newSource.x - oldSource.x)
+              } else {
+                const propX = (wp.x - oldSource.x) / oldDx
+                newX = newSource.x + propX * newDx
+              }
+
+              // Calculate Y proportion
+              const oldDy = oldTarget.y - oldSource.y
+              const newDy = newTarget.y - newSource.y
+              let newY: number
+              if (Math.abs(oldDy) < 1) {
+                // Source and target were horizontally aligned, use delta from source
+                newY = wp.y + (newSource.y - oldSource.y)
+              } else {
+                const propY = (wp.y - oldSource.y) / oldDy
+                newY = newSource.y + propY * newDy
+              }
+
+              // Snap to half-grid for clean wire routing
+              return { x: snapToGrid(newX, GRID_STEP), y: snapToGrid(newY, GRID_STEP) }
+            })
+          }
+
           // Clear cached wire paths for this component
           clearPathsForComponent(id, state.circuit)
         }
@@ -190,6 +261,17 @@ export const useStore = create<AppState>()(
         state.ui.selection.wires.delete(id)
       })
       clearWirePath(id)
+    },
+
+    updateWireWaypoints: (id, waypoints) => {
+      set((state) => {
+        const wire = state.circuit.wires.find((w) => w.id === id)
+        if (wire) {
+          wire.waypoints = waypoints
+          // Clear cached path so it gets recomputed
+          clearWirePath(id)
+        }
+      })
     },
 
     addInput: (label) => {
@@ -282,8 +364,68 @@ export const useStore = create<AppState>()(
 
     moveInputBoard: (x, y) => {
       set((state) => {
+        // Get old endpoint positions for connected wires BEFORE moving
+        const wireEndpoints = new Map<WireId, { oldSource: Point | null; oldTarget: Point | null }>()
+        for (const wire of state.circuit.wires) {
+          if (!wire.waypoints || wire.waypoints.length === 0) continue
+          if (wire.source.type === 'input') {
+            wireEndpoints.set(wire.id, {
+              oldSource: getWireEndpointWorld(wire.source, state.circuit, state.customComponents),
+              oldTarget: getWireEndpointWorld(wire.target, state.circuit, state.customComponents),
+            })
+          }
+        }
+
+        // Move the board
         state.circuit.inputBoard.x = x
         state.circuit.inputBoard.y = y
+
+        // Adjust waypoints for connected wires using proportional positioning
+        for (const wire of state.circuit.wires) {
+          if (!wire.waypoints || wire.waypoints.length === 0) continue
+
+          const endpoints = wireEndpoints.get(wire.id)
+          if (!endpoints) continue
+
+          const { oldSource, oldTarget } = endpoints
+          if (!oldSource || !oldTarget) continue
+
+          // Get new endpoint positions AFTER moving
+          const newSource = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
+          const newTarget = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
+          if (!newSource || !newTarget) continue
+
+          // Calculate the proportional position of each waypoint and adjust
+          wire.waypoints = wire.waypoints.map((wp) => {
+            // Calculate X proportion (where along the X axis is this waypoint?)
+            const oldDx = oldTarget.x - oldSource.x
+            const newDx = newTarget.x - newSource.x
+            let newX: number
+            if (Math.abs(oldDx) < 1) {
+              // Source and target were vertically aligned, use delta from source
+              newX = wp.x + (newSource.x - oldSource.x)
+            } else {
+              const propX = (wp.x - oldSource.x) / oldDx
+              newX = newSource.x + propX * newDx
+            }
+
+            // Calculate Y proportion
+            const oldDy = oldTarget.y - oldSource.y
+            const newDy = newTarget.y - newSource.y
+            let newY: number
+            if (Math.abs(oldDy) < 1) {
+              // Source and target were horizontally aligned, use delta from source
+              newY = wp.y + (newSource.y - oldSource.y)
+            } else {
+              const propY = (wp.y - oldSource.y) / oldDy
+              newY = newSource.y + propY * newDy
+            }
+
+            // Snap to half-grid for clean wire routing
+            return { x: snapToGrid(newX, GRID_STEP), y: snapToGrid(newY, GRID_STEP) }
+          })
+        }
+
         // Clear cached wire paths for input board wires
         clearPathsForInputBoard(state.circuit)
       })
@@ -291,8 +433,68 @@ export const useStore = create<AppState>()(
 
     moveOutputBoard: (x, y) => {
       set((state) => {
+        // Get old endpoint positions for connected wires BEFORE moving
+        const wireEndpoints = new Map<WireId, { oldSource: Point | null; oldTarget: Point | null }>()
+        for (const wire of state.circuit.wires) {
+          if (!wire.waypoints || wire.waypoints.length === 0) continue
+          if (wire.target.type === 'output') {
+            wireEndpoints.set(wire.id, {
+              oldSource: getWireEndpointWorld(wire.source, state.circuit, state.customComponents),
+              oldTarget: getWireEndpointWorld(wire.target, state.circuit, state.customComponents),
+            })
+          }
+        }
+
+        // Move the board
         state.circuit.outputBoard.x = x
         state.circuit.outputBoard.y = y
+
+        // Adjust waypoints for connected wires using proportional positioning
+        for (const wire of state.circuit.wires) {
+          if (!wire.waypoints || wire.waypoints.length === 0) continue
+
+          const endpoints = wireEndpoints.get(wire.id)
+          if (!endpoints) continue
+
+          const { oldSource, oldTarget } = endpoints
+          if (!oldSource || !oldTarget) continue
+
+          // Get new endpoint positions AFTER moving
+          const newSource = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
+          const newTarget = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
+          if (!newSource || !newTarget) continue
+
+          // Calculate the proportional position of each waypoint and adjust
+          wire.waypoints = wire.waypoints.map((wp) => {
+            // Calculate X proportion (where along the X axis is this waypoint?)
+            const oldDx = oldTarget.x - oldSource.x
+            const newDx = newTarget.x - newSource.x
+            let newX: number
+            if (Math.abs(oldDx) < 1) {
+              // Source and target were vertically aligned, use delta from source
+              newX = wp.x + (newSource.x - oldSource.x)
+            } else {
+              const propX = (wp.x - oldSource.x) / oldDx
+              newX = newSource.x + propX * newDx
+            }
+
+            // Calculate Y proportion
+            const oldDy = oldTarget.y - oldSource.y
+            const newDy = newTarget.y - newSource.y
+            let newY: number
+            if (Math.abs(oldDy) < 1) {
+              // Source and target were horizontally aligned, use delta from source
+              newY = wp.y + (newSource.y - oldSource.y)
+            } else {
+              const propY = (wp.y - oldSource.y) / oldDy
+              newY = newSource.y + propY * newDy
+            }
+
+            // Snap to half-grid for clean wire routing
+            return { x: snapToGrid(newX, GRID_STEP), y: snapToGrid(newY, GRID_STEP) }
+          })
+        }
+
         // Clear cached wire paths for output board wires
         clearPathsForOutputBoard(state.circuit)
       })

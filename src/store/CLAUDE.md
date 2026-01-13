@@ -47,12 +47,13 @@ ui: {
 
 ### Circuit
 - `addComponent(type, x, y)` - add gate or custom component
-- `moveComponent(id, x, y)` - reposition gate
+- `moveComponent(id, x, y)` - reposition gate (adjusts connected wire waypoints proportionally)
 - `addWire(source, target)` - connect pins (auto-replaces existing connection to target)
+- `updateWireWaypoints(id, waypoints)` - set custom waypoints for wire path editing
 - `addInput()` / `removeInput(id)` - manage input board (minimum 1 pin always kept)
 - `addOutput()` / `removeOutput(id)` - manage output board (minimum 1 pin always kept)
 - `renameInput(id, label)` / `renameOutput(id, label)` - rename board pins
-- `moveInputBoard(x, y)` / `moveOutputBoard(x, y)` - reposition boards
+- `moveInputBoard(x, y)` / `moveOutputBoard(x, y)` - reposition boards (adjust connected wire waypoints proportionally)
 
 Initial circuit starts with 1 default input and 1 default output. Boards are positioned at ±360 (on major grid lines).
 

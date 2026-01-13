@@ -1,4 +1,4 @@
-import type { Circuit, ComponentId, WireId, InputId, OutputId, CustomComponentId, CustomComponentDefinition } from '../types'
+import type { Circuit, ComponentId, WireId, InputId, OutputId, CustomComponentId, CustomComponentDefinition, Point } from '../types'
 import type { Viewport } from '../types'
 import { screenToWorld } from './grid'
 import { getComponentDefinition } from '../simulation'
@@ -8,6 +8,7 @@ const PIN_HIT_RADIUS = 12
 const WIRE_HIT_RADIUS = 6
 const BUTTON_RADIUS = 10
 const TOGGLE_RADIUS = 10
+export const HANDLE_SIZE = { width: 16, height: 8 } // Capsule dimensions in world units
 
 // Board layout constants (must match renderer)
 const BOARD_WIDTH = 100
@@ -21,6 +22,7 @@ export interface HitResult {
     | 'component'
     | 'pin'
     | 'wire'
+    | 'wireHandle'
     | 'input-board'
     | 'output-board'
     | 'input-add-button'
@@ -36,6 +38,7 @@ export interface HitResult {
   pinType?: 'input' | 'output' | 'input-board' | 'output-board'
   inputId?: InputId
   outputId?: OutputId
+  handleIndex?: number  // Which segment's handle (0 = first segment)
 }
 
 export function hitTest(
@@ -43,10 +46,17 @@ export function hitTest(
   screenY: number,
   circuit: Circuit,
   viewport: Viewport,
-  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
+  customComponents?: Map<CustomComponentId, CustomComponentDefinition>,
+  selectedWires?: Set<WireId>
 ): HitResult {
   const world = screenToWorld(screenX, screenY, viewport)
   const scale = viewport.zoom
+
+  // Check wire handles first (only for selected wires)
+  if (selectedWires && selectedWires.size > 0) {
+    const handleResult = hitTestWireHandles(world.x, world.y, circuit, scale, selectedWires, customComponents)
+    if (handleResult.type !== 'none') return handleResult
+  }
 
   // Check input board elements (left side)
   const inputResult = hitTestInputBoard(world.x, world.y, circuit, scale)
@@ -275,6 +285,71 @@ function hitTestOutputBoard(worldX: number, worldY: number, circuit: Circuit, sc
   }
 
   return { type: 'none' }
+}
+
+function hitTestWireHandles(
+  worldX: number,
+  worldY: number,
+  circuit: Circuit,
+  _scale: number,
+  selectedWires: Set<WireId>,
+  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
+): HitResult {
+  // Check handles for each selected wire
+  for (const wire of circuit.wires) {
+    if (!selectedWires.has(wire.id)) continue
+
+    const path = computeWirePath(wire, circuit, customComponents)
+    if (path.length < 2) continue
+
+    // Check each segment's handle
+    for (let i = 0; i < path.length - 1; i++) {
+      const p1 = path[i]
+      const p2 = path[i + 1]
+      if (!p1 || !p2) continue
+
+      // Calculate midpoint of segment
+      const midX = (p1.x + p2.x) / 2
+      const midY = (p1.y + p2.y) / 2
+
+      // Determine if segment is horizontal or vertical
+      const isHorizontal = Math.abs(p2.y - p1.y) < Math.abs(p2.x - p1.x)
+
+      // Hit test as a capsule/pill shape oriented along segment
+      // Use half-width and half-height for the hit area
+      const halfW = (isHorizontal ? HANDLE_SIZE.width : HANDLE_SIZE.height) / 2
+      const halfH = (isHorizontal ? HANDLE_SIZE.height : HANDLE_SIZE.width) / 2
+
+      // Simple rectangle hit test (capsule approximation)
+      if (
+        worldX >= midX - halfW &&
+        worldX <= midX + halfW &&
+        worldY >= midY - halfH &&
+        worldY <= midY + halfH
+      ) {
+        return { type: 'wireHandle', wireId: wire.id, handleIndex: i }
+      }
+    }
+  }
+
+  return { type: 'none' }
+}
+
+/**
+ * Get the midpoint of a wire segment for handle positioning
+ */
+export function getSegmentMidpoint(p1: Point, p2: Point): Point {
+  return {
+    x: (p1.x + p2.x) / 2,
+    y: (p1.y + p2.y) / 2,
+  }
+}
+
+/**
+ * Determine if a segment is horizontal (vs vertical)
+ */
+export function isSegmentHorizontal(p1: Point, p2: Point): boolean {
+  return Math.abs(p2.y - p1.y) < Math.abs(p2.x - p1.x)
 }
 
 function distance(x1: number, y1: number, x2: number, y2: number): number {

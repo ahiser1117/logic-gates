@@ -5,12 +5,80 @@ import { renderFrame } from './renderer'
 import { hitTest } from './hitTest'
 import { screenToWorld, worldToScreen, snapToGrid } from './grid'
 import { getComponentDefinition } from '../simulation'
-import type { ComponentType, ComponentId, InputId, OutputId } from '../types'
+import type { ComponentType, ComponentId, InputId, OutputId, WireId, Point } from '../types'
+import { computeWirePath, GRID_STEP } from './wirePathfinding'
 import './CanvasWorkspace.css'
 
 const GRID_SIZE = 20
 const PIN_START_Y = 40
 const PIN_SPACING = 40
+
+/**
+ * Simplify a path by removing collinear points and duplicate points.
+ * Keeps only the corner points where direction changes.
+ * Works on the full path (including pin positions).
+ */
+function simplifyPath(path: Point[]): Point[] {
+  if (path.length <= 2) return path
+
+  const firstPoint = path[0]
+  if (!firstPoint) return path
+
+  const simplified: Point[] = [firstPoint]
+
+  for (let i = 1; i < path.length - 1; i++) {
+    const prev = simplified[simplified.length - 1]
+    const curr = path[i]
+    const next = path[i + 1]
+
+    if (!prev || !curr || !next) continue
+
+    // Skip if current point is same as previous (duplicate)
+    if (prev.x === curr.x && prev.y === curr.y) continue
+
+    // Check if prev, curr, next are collinear
+    const dx1 = curr.x - prev.x
+    const dy1 = curr.y - prev.y
+    const dx2 = next.x - curr.x
+    const dy2 = next.y - curr.y
+
+    // Points are collinear if both segments are in the same direction
+    // (both horizontal or both vertical)
+    const prevToCurrentHorizontal = dy1 === 0
+    const currentToNextHorizontal = dy2 === 0
+    const prevToCurrentVertical = dx1 === 0
+    const currentToNextVertical = dx2 === 0
+
+    const isCollinear =
+      (prevToCurrentHorizontal && currentToNextHorizontal) ||
+      (prevToCurrentVertical && currentToNextVertical)
+
+    // Keep the point if it's a corner (not collinear)
+    if (!isCollinear) {
+      simplified.push(curr)
+    }
+  }
+
+  // Always add the last point
+  const lastPoint = path[path.length - 1]
+  if (lastPoint) {
+    const lastSimplified = simplified[simplified.length - 1]
+    // Don't add if it's a duplicate
+    if (!lastSimplified || lastSimplified.x !== lastPoint.x || lastSimplified.y !== lastPoint.y) {
+      simplified.push(lastPoint)
+    }
+  }
+
+  return simplified
+}
+
+/**
+ * Extract waypoints from a full path by removing the first and last points (pins).
+ */
+function pathToWaypoints(path: Point[]): Point[] {
+  if (path.length <= 2) return []
+  return path.slice(1, -1)
+}
 
 interface LabelEdit {
   type: 'input' | 'output'
@@ -25,6 +93,7 @@ export function CanvasWorkspace() {
   const containerRef = useRef<HTMLDivElement>(null)
   const dragStartPositions = useRef<Map<ComponentId, { x: number; y: number }>>(new Map())
   const boardDragStart = useRef<{ board: 'input' | 'output'; x: number; y: number } | null>(null)
+  const wireHandleDragStart = useRef<{ wireId: WireId; handleIndex: number; originalPath: Point[] } | null>(null)
   const [labelEdit, setLabelEdit] = useState<LabelEdit | null>(null)
   const labelInputRef = useRef<HTMLInputElement>(null)
 
@@ -57,6 +126,7 @@ export function CanvasWorkspace() {
   const moveInputBoard = useStore((s) => s.moveInputBoard)
   const moveOutputBoard = useStore((s) => s.moveOutputBoard)
   const setHoveredButton = useStore((s) => s.setHoveredButton)
+  const updateWireWaypoints = useStore((s) => s.updateWireWaypoints)
 
   // Focus label input when editing starts
   useEffect(() => {
@@ -146,7 +216,7 @@ export function CanvasWorkspace() {
 
       // Left click
       if (e.button === 0) {
-        const hit = hitTest(x, y, circuit, ui.viewport, customComponents)
+        const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
 
         // Handle input board "add" button
         if (hit.type === 'input-add-button') {
@@ -285,6 +355,33 @@ export function CanvasWorkspace() {
             currentX: world.x,
             currentY: world.y,
           })
+        } else if (hit.type === 'wireHandle') {
+          // Start dragging a wire handle
+          const wire = circuit.wires.find((w) => w.id === hit.wireId)
+          if (wire) {
+            // Get the current path (either from waypoints or auto-computed)
+            // Store the FULL original path including pin positions
+            const originalPath = computeWirePath(wire, circuit, customComponents)
+
+            wireHandleDragStart.current = {
+              wireId: hit.wireId!,
+              handleIndex: hit.handleIndex!,
+              originalPath: originalPath,
+            }
+
+            const world = screenToWorld(x, y, ui.viewport)
+            setDrag({
+              type: 'wireHandle',
+              startX: world.x,
+              startY: world.y,
+              currentX: world.x,
+              currentY: world.y,
+              payload: {
+                wireId: hit.wireId,
+                handleIndex: hit.handleIndex,
+              },
+            })
+          }
         } else if (hit.type === 'wire') {
           if (!e.shiftKey) {
             clearSelection()
@@ -311,6 +408,7 @@ export function CanvasWorkspace() {
       customComponents,
       ui.viewport,
       ui.selection.components,
+      ui.selection.wires,
       clearSelection,
       selectComponent,
       selectWire,
@@ -329,7 +427,7 @@ export function CanvasWorkspace() {
       const { x, y } = getScreenCoords(e)
 
       // Update hover state
-      const hit = hitTest(x, y, circuit, ui.viewport, customComponents)
+      const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
       if (hit.type === 'pin' && hit.componentId !== undefined) {
         setHoveredPin(hit.componentId, hit.pinIndex!)
         setHoveredBoardPin(null, null)
@@ -397,13 +495,157 @@ export function CanvasWorkspace() {
           }
         }
         setDrag({ currentX: world.x, currentY: world.y })
+      } else if (ui.drag.type === 'wireHandle' && wireHandleDragStart.current) {
+        const world = screenToWorld(x, y, ui.viewport)
+        const dy = world.y - ui.drag.startY
+        const dx = world.x - ui.drag.startX
+
+        const { wireId, handleIndex, originalPath } = wireHandleDragStart.current
+
+        // Use the ORIGINAL path stored at drag start, not the current path
+        // This ensures consistent segment identification throughout the drag
+        if (originalPath.length < 2) return
+
+        // The segment being dragged is between originalPath[handleIndex] and originalPath[handleIndex + 1]
+        const p1 = originalPath[handleIndex]
+        const p2 = originalPath[handleIndex + 1]
+        if (!p1 || !p2) return
+
+        // Determine if segment is horizontal or vertical
+        const isHorizontal = Math.abs(p2.y - p1.y) < Math.abs(p2.x - p1.x)
+
+        // Snap the movement to half-grid
+        const snappedDelta = isHorizontal
+          ? snapToGrid(dy, GRID_STEP)  // Horizontal segments move vertically
+          : snapToGrid(dx, GRID_STEP)  // Vertical segments move horizontally
+
+        // Check if endpoints are pins (first and last points in path are always pins)
+        const p1IsSourcePin = handleIndex === 0
+        const p2IsTargetPin = handleIndex === originalPath.length - 2
+
+        // Original waypoints are all path points except first (source pin) and last (target pin)
+        const originalWaypoints = originalPath.slice(1, -1)
+
+        // Build new waypoints based on the three cases
+        let newWaypoints: Point[] = []
+
+        if (!p1IsSourcePin && !p2IsTargetPin) {
+          // Case 1: Neither endpoint is a pin - move both waypoint endpoints
+          const wp1Idx = handleIndex - 1
+          const wp2Idx = handleIndex
+          newWaypoints = originalWaypoints.map((wp, idx) => {
+            if (idx === wp1Idx || idx === wp2Idx) {
+              return isHorizontal
+                ? { x: wp.x, y: wp.y + snappedDelta }
+                : { x: wp.x + snappedDelta, y: wp.y }
+            }
+            return { ...wp }
+          })
+        } else if (p1IsSourcePin && p2IsTargetPin) {
+          // Case 3: Both endpoints are pins (direct pin-to-pin segment)
+          // Insert 4 new points to create a movable segment in the middle
+          const sourcePin = originalPath[0]
+          const targetPin = originalPath[originalPath.length - 1]
+          if (!sourcePin || !targetPin) return
+
+          if (isHorizontal) {
+            // Create vertical connectors at 1/3 and 2/3 along the segment
+            const x1 = snapToGrid(sourcePin.x + (targetPin.x - sourcePin.x) / 3, GRID_STEP)
+            const x2 = snapToGrid(sourcePin.x + (targetPin.x - sourcePin.x) * 2 / 3, GRID_STEP)
+            const newY = sourcePin.y + snappedDelta
+            newWaypoints = [
+              { x: x1, y: sourcePin.y },  // Corner 1: start of vertical at source side
+              { x: x1, y: newY },          // Corner 2: end of vertical, start of moved segment
+              { x: x2, y: newY },          // Corner 3: end of moved segment, start of vertical
+              { x: x2, y: targetPin.y },  // Corner 4: end of vertical at target side
+            ]
+          } else {
+            const y1 = snapToGrid(sourcePin.y + (targetPin.y - sourcePin.y) / 3, GRID_STEP)
+            const y2 = snapToGrid(sourcePin.y + (targetPin.y - sourcePin.y) * 2 / 3, GRID_STEP)
+            const newX = sourcePin.x + snappedDelta
+            newWaypoints = [
+              { x: sourcePin.x, y: y1 },
+              { x: newX, y: y1 },
+              { x: newX, y: y2 },
+              { x: targetPin.x, y: y2 },
+            ]
+          }
+        } else if (p1IsSourcePin) {
+          // Case 2a: Source pin connected, target is a waypoint
+          // Insert 2 new points at 1/3 of segment length from pin to create vertical connector
+          const sourcePin = originalPath[0]
+          const wp0 = originalWaypoints[0]
+          if (!sourcePin || !wp0) return
+
+          if (isHorizontal) {
+            const newY = sourcePin.y + snappedDelta
+            // Connector at 1/3 of the way from sourcePin to wp0
+            const connectorX = snapToGrid(sourcePin.x + (wp0.x - sourcePin.x) / 3, GRID_STEP)
+
+            newWaypoints = [
+              { x: connectorX, y: sourcePin.y },  // Corner at pin's Y (end of stub)
+              { x: connectorX, y: newY },          // Corner at new Y (start of moved segment)
+              // Move wp0 to new Y (rest of first segment)
+              { x: wp0.x, y: newY },
+              // Keep remaining waypoints unchanged (may create diagonal with wp1)
+              ...originalWaypoints.slice(1).map(wp => ({ ...wp })),
+            ]
+          } else {
+            const newX = sourcePin.x + snappedDelta
+            // Connector at 1/3 of the way from sourcePin to wp0
+            const connectorY = snapToGrid(sourcePin.y + (wp0.y - sourcePin.y) / 3, GRID_STEP)
+
+            newWaypoints = [
+              { x: sourcePin.x, y: connectorY },
+              { x: newX, y: connectorY },
+              { x: newX, y: wp0.y },
+              ...originalWaypoints.slice(1).map(wp => ({ ...wp })),
+            ]
+          }
+        } else {
+          // Case 2b: Target pin connected, source is a waypoint
+          // Insert 2 new points at 1/3 of segment length from pin to create vertical connector
+          const targetPin = originalPath[originalPath.length - 1]
+          const wpLast = originalWaypoints[originalWaypoints.length - 1]
+          if (!targetPin || !wpLast) return
+
+          if (isHorizontal) {
+            const newY = targetPin.y + snappedDelta
+            // Connector at 1/3 of the way from targetPin back toward wpLast
+            const connectorX = snapToGrid(targetPin.x - (targetPin.x - wpLast.x) / 3, GRID_STEP)
+
+            newWaypoints = [
+              // Keep all waypoints except last unchanged (may create diagonal with wpLast)
+              ...originalWaypoints.slice(0, -1).map(wp => ({ ...wp })),
+              // Move wpLast to new Y
+              { x: wpLast.x, y: newY },
+              // Vertical connector near target
+              { x: connectorX, y: newY },
+              { x: connectorX, y: targetPin.y },
+            ]
+          } else {
+            const newX = targetPin.x + snappedDelta
+            // Connector at 1/3 of the way from targetPin back toward wpLast
+            const connectorY = snapToGrid(targetPin.y - (targetPin.y - wpLast.y) / 3, GRID_STEP)
+
+            newWaypoints = [
+              ...originalWaypoints.slice(0, -1).map(wp => ({ ...wp })),
+              { x: newX, y: wpLast.y },
+              { x: newX, y: connectorY },
+              { x: targetPin.x, y: connectorY },
+            ]
+          }
+        }
+
+        updateWireWaypoints(wireId, newWaypoints)
+        setDrag({ currentX: world.x, currentY: world.y })
       } else if (ui.drag.type === 'marquee') {
         setDrag({ currentX: x, currentY: y })
       } else if (ui.wiring.active) {
         setDrag({ currentX: x, currentY: y })
       }
     },
-    [getScreenCoords, circuit, customComponents, ui.viewport, ui.drag, ui.wiring.active, pan, setDrag, setHoveredPin, setHoveredBoardPin, setHoveredButton, moveComponent, moveInputBoard, moveOutputBoard]
+    [getScreenCoords, circuit, customComponents, ui.viewport, ui.drag, ui.wiring.active, ui.selection.wires, pan, setDrag, setHoveredPin, setHoveredBoardPin, setHoveredButton, moveComponent, moveInputBoard, moveOutputBoard, updateWireWaypoints]
   )
 
   const handleMouseUp = useCallback(
@@ -411,7 +653,7 @@ export function CanvasWorkspace() {
       const { x, y } = getScreenCoords(e)
 
       if (ui.wiring.active) {
-        const hit = hitTest(x, y, circuit, ui.viewport, customComponents)
+        const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
         if (hit.type === 'pin') {
           if (hit.pinType === 'input-board') {
             completeWiring({ type: 'input', inputId: hit.inputId! })
@@ -468,11 +710,84 @@ export function CanvasWorkspace() {
         }
       }
 
+      // Simplify wire path on mouse up after handle drag
+      if (ui.drag.type === 'wireHandle' && wireHandleDragStart.current) {
+        const { wireId } = wireHandleDragStart.current
+        const wire = circuit.wires.find((w) => w.id === wireId)
+        if (wire) {
+          // Get the full path (including pin positions)
+          const fullPath = computeWirePath(wire, circuit, customComponents)
+          // Simplify the full path to remove collinear points
+          const simplifiedPath = simplifyPath(fullPath)
+          // Extract waypoints (remove first and last which are pin positions)
+          const newWaypoints = pathToWaypoints(simplifiedPath)
+
+          // Update if waypoints changed
+          const currentWaypoints = wire.waypoints || []
+          if (newWaypoints.length !== currentWaypoints.length ||
+              newWaypoints.some((wp, i) =>
+                wp.x !== currentWaypoints[i]?.x || wp.y !== currentWaypoints[i]?.y)) {
+            updateWireWaypoints(wireId, newWaypoints)
+          }
+        }
+      }
+
+      // Simplify wire paths after component drag
+      if (ui.drag.type === 'component' && dragStartPositions.current.size > 0) {
+        // Find all wires connected to dragged components that have custom waypoints
+        const draggedComponentIds = new Set(dragStartPositions.current.keys())
+        for (const wire of circuit.wires) {
+          if (!wire.waypoints || wire.waypoints.length === 0) continue
+
+          const isSourceConnected = wire.source.type === 'component' && draggedComponentIds.has(wire.source.componentId)
+          const isTargetConnected = wire.target.type === 'component' && draggedComponentIds.has(wire.target.componentId)
+
+          if (isSourceConnected || isTargetConnected) {
+            const fullPath = computeWirePath(wire, circuit, customComponents)
+            const simplifiedPath = simplifyPath(fullPath)
+            const newWaypoints = pathToWaypoints(simplifiedPath)
+
+            const currentWaypoints = wire.waypoints || []
+            if (newWaypoints.length !== currentWaypoints.length ||
+                newWaypoints.some((wp, i) =>
+                  wp.x !== currentWaypoints[i]?.x || wp.y !== currentWaypoints[i]?.y)) {
+              updateWireWaypoints(wire.id, newWaypoints)
+            }
+          }
+        }
+      }
+
+      // Simplify wire paths after board drag
+      if (ui.drag.type === 'component' && boardDragStart.current) {
+        const boardType = boardDragStart.current.board
+        for (const wire of circuit.wires) {
+          if (!wire.waypoints || wire.waypoints.length === 0) continue
+
+          const isConnected =
+            (boardType === 'input' && wire.source.type === 'input') ||
+            (boardType === 'output' && wire.target.type === 'output')
+
+          if (isConnected) {
+            const fullPath = computeWirePath(wire, circuit, customComponents)
+            const simplifiedPath = simplifyPath(fullPath)
+            const newWaypoints = pathToWaypoints(simplifiedPath)
+
+            const currentWaypoints = wire.waypoints || []
+            if (newWaypoints.length !== currentWaypoints.length ||
+                newWaypoints.some((wp, i) =>
+                  wp.x !== currentWaypoints[i]?.x || wp.y !== currentWaypoints[i]?.y)) {
+              updateWireWaypoints(wire.id, newWaypoints)
+            }
+          }
+        }
+      }
+
       dragStartPositions.current.clear()
       boardDragStart.current = null
+      wireHandleDragStart.current = null
       resetDrag()
     },
-    [getScreenCoords, circuit, customComponents, ui.viewport, ui.drag, ui.wiring.active, completeWiring, cancelWiring, resetDrag, selectComponent]
+    [getScreenCoords, circuit, customComponents, ui.viewport, ui.drag, ui.wiring.active, ui.selection.wires, completeWiring, cancelWiring, resetDrag, selectComponent, updateWireWaypoints]
   )
 
   const handleWheel = useCallback(
@@ -489,7 +804,7 @@ export function CanvasWorkspace() {
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       const { x, y } = getScreenCoords(e)
-      const hit = hitTest(x, y, circuit, ui.viewport, customComponents)
+      const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
 
       if (hit.type === 'input-label' && hit.inputId !== undefined) {
         const input = circuit.inputs.find((i) => i.id === hit.inputId)
@@ -519,7 +834,7 @@ export function CanvasWorkspace() {
         }
       }
     },
-    [getScreenCoords, circuit, customComponents]
+    [getScreenCoords, circuit, customComponents, ui.viewport, ui.selection.wires]
   )
 
   // Handle label edit completion

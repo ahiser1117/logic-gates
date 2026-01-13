@@ -1,3 +1,9 @@
+// === Point (for wire paths) ===
+export interface Point {
+  x: number
+  y: number
+}
+
 // === Core Identifiers ===
 export type ComponentId = number & { readonly __brand: 'ComponentId' }
 export type WireId = number & { readonly __brand: 'WireId' }
@@ -85,6 +91,7 @@ export interface Wire {
   id: WireId
   source: WireSource
   target: WireTarget
+  waypoints?: Point[]  // User-controlled intermediate points (world coords)
 }
 
 // === Board Position ===

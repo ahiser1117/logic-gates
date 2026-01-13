@@ -27,7 +27,7 @@ export interface WiringState {
 
 // === Drag State ===
 export interface DragState {
-  type: 'none' | 'component' | 'palette' | 'pan' | 'marquee'
+  type: 'none' | 'component' | 'palette' | 'pan' | 'marquee' | 'wireHandle'
   startX: number
   startY: number
   currentX: number
@@ -37,6 +37,9 @@ export interface DragState {
     componentIds?: ComponentId[]
     offsetX?: number
     offsetY?: number
+    // Wire handle dragging
+    wireId?: WireId
+    handleIndex?: number
   }
 }
 
