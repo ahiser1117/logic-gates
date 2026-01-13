@@ -27,8 +27,11 @@ const COLORS = {
   pinOutput: '#22c55e',
   pinHovered: '#ffffff',
   wireOff: '#64748b',
+  wireOffBorder: '#334155',
   wireOn: '#22c55e',
+  wireOnBorder: '#166534',
   wireSelected: '#f59e0b',
+  wireSelectedBorder: '#92400e',
   boardPin: '#3b82f6',
   boardBg: '#1e293b',
   boardBorder: '#334155',
@@ -63,11 +66,11 @@ export function renderFrame(
   // Draw grid
   drawGrid(ctx, ui.viewport, width / dpr, height / dpr)
 
-  // Draw input board (left)
-  drawInputBoard(ctx, circuit, ui, ui.hoveredButton)
+  // Draw input board background (left) - without pins
+  drawInputBoard(ctx, circuit, ui, ui.hoveredButton, false)
 
-  // Draw output board (right)
-  drawOutputBoard(ctx, circuit, ui, simulation.outputValues, ui.hoveredButton)
+  // Draw output board background (right) - without pins
+  drawOutputBoard(ctx, circuit, ui, simulation.outputValues, ui.hoveredButton, false)
 
   // Draw wires
   for (const wire of circuit.wires) {
@@ -79,6 +82,10 @@ export function renderFrame(
   if (ui.wiring.active && ui.wiring.startPin) {
     drawWiringPreview(ctx, ui, circuit, customComponents)
   }
+
+  // Draw board pins on top of wires
+  drawInputBoard(ctx, circuit, ui, ui.hoveredButton, true)
+  drawOutputBoard(ctx, circuit, ui, simulation.outputValues, ui.hoveredButton, true)
 
   // Draw components
   for (const component of circuit.components) {
@@ -222,23 +229,38 @@ function drawWire(
   if (!firstPoint) return
 
   const selected = ui.selection.wires.has(wire.id)
+  const zoom = ui.viewport.zoom
 
-  ctx.strokeStyle = selected ? COLORS.wireSelected : signalValue ? COLORS.wireOn : COLORS.wireOff
-  ctx.lineWidth = selected ? 3 : 2
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  // Draw path as polyline
-  ctx.beginPath()
-  const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
-  ctx.moveTo(startScreen.x, startScreen.y)
-
-  for (let i = 1; i < path.length; i++) {
-    const pt = path[i]
-    if (!pt) continue
-    const screen = worldToScreen(pt.x, pt.y, ui.viewport)
-    ctx.lineTo(screen.x, screen.y)
+  // Build the path once
+  const buildPath = () => {
+    ctx.beginPath()
+    const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
+    ctx.moveTo(startScreen.x, startScreen.y)
+    for (let i = 1; i < path.length; i++) {
+      const pt = path[i]
+      if (!pt) continue
+      const screen = worldToScreen(pt.x, pt.y, ui.viewport)
+      ctx.lineTo(screen.x, screen.y)
+    }
   }
+
+  // Draw border (thicker, darker) - constant world size
+  ctx.strokeStyle = selected
+    ? COLORS.wireSelectedBorder
+    : signalValue
+      ? COLORS.wireOnBorder
+      : COLORS.wireOffBorder
+  ctx.lineWidth = (selected ? 6 : 5) * zoom
+  buildPath()
+  ctx.stroke()
+
+  // Draw main wire on top - constant world size
+  ctx.strokeStyle = selected ? COLORS.wireSelected : signalValue ? COLORS.wireOn : COLORS.wireOff
+  ctx.lineWidth = (selected ? 4 : 3) * zoom
+  buildPath()
   ctx.stroke()
 }
 
@@ -311,151 +333,174 @@ function drawWiringPreview(
   const firstPoint = path[0]
   if (!firstPoint) return
 
-  ctx.strokeStyle = '#60a5fa'
-  ctx.lineWidth = 2
-  ctx.setLineDash([5, 5])
+  const zoom = ui.viewport.zoom
 
-  // Draw path as polyline
-  ctx.beginPath()
-  const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
-  ctx.moveTo(startScreen.x, startScreen.y)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
 
-  for (let i = 1; i < path.length; i++) {
-    const pt = path[i]
-    if (!pt) continue
-    const screen = worldToScreen(pt.x, pt.y, ui.viewport)
-    ctx.lineTo(screen.x, screen.y)
+  // Build the path once
+  const buildPath = () => {
+    ctx.beginPath()
+    const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
+    ctx.moveTo(startScreen.x, startScreen.y)
+    for (let i = 1; i < path.length; i++) {
+      const pt = path[i]
+      if (!pt) continue
+      const screen = worldToScreen(pt.x, pt.y, ui.viewport)
+      ctx.lineTo(screen.x, screen.y)
+    }
   }
+
+  // Draw border - constant world size
+  ctx.strokeStyle = '#1e3a5f'
+  ctx.lineWidth = 5 * zoom
+  ctx.setLineDash([])
+  buildPath()
+  ctx.stroke()
+
+  // Draw main preview line (dashed) - constant world size
+  ctx.strokeStyle = '#60a5fa'
+  ctx.lineWidth = 3 * zoom
+  ctx.setLineDash([5 * zoom, 5 * zoom])
+  buildPath()
   ctx.stroke()
 
   ctx.setLineDash([])
 }
 
-function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIState, hoveredButton: UIState['hoveredButton']) {
+function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIState, hoveredButton: UIState['hoveredButton'], pinsOnly: boolean = false) {
   const { x: boardX, y: boardY } = circuit.inputBoard
   const inputCount = circuit.inputs.length
   const scale = ui.viewport.zoom
 
-  // Calculate board dimensions
-  const boardWidth = BOARD_WIDTH * scale
-  const pinsHeight = Math.max(0, inputCount * PIN_SPACING)
-  const boardHeight = (BOARD_HEADER_HEIGHT + pinsHeight) * scale
-
   // Get screen position (board position is the center of the header)
   const boardScreen = worldToScreen(boardX, boardY, ui.viewport)
 
-  // Draw board background
-  ctx.fillStyle = COLORS.boardBg
-  ctx.strokeStyle = COLORS.boardBorder
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.roundRect(
-    boardScreen.x - boardWidth / 2,
-    boardScreen.y - (BOARD_HEADER_HEIGHT * scale) / 2,
-    boardWidth,
-    boardHeight,
-    8 * scale
-  )
-  ctx.fill()
-  ctx.stroke()
+  if (!pinsOnly) {
+    // Calculate board dimensions
+    const boardWidth = BOARD_WIDTH * scale
+    const pinsHeight = Math.max(0, inputCount * PIN_SPACING)
+    const boardHeight = (BOARD_HEADER_HEIGHT + pinsHeight) * scale
 
-  // Draw header with label and +/- buttons
-  const headerY = boardScreen.y
-  const isRemoveHovered = hoveredButton === 'input-remove'
-  const isAddHovered = hoveredButton === 'input-add'
-
-  // Draw "-" button (left)
-  const minusBtnX = boardScreen.x - 34 * scale
-  ctx.beginPath()
-  ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
-  ctx.fill()
-  ctx.fillStyle = COLORS.text
-  ctx.font = `bold ${14 * scale}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('−', minusBtnX, headerY)
-
-  // Draw "INPUTS" label (center)
-  ctx.fillStyle = COLORS.text
-  ctx.font = `bold ${10 * scale}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.fillText('INPUTS', boardScreen.x, headerY)
-
-  // Draw "+" button (right)
-  const plusBtnX = boardScreen.x + 34 * scale
-  ctx.beginPath()
-  ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
-  ctx.fill()
-  ctx.fillStyle = COLORS.text
-  ctx.font = `bold ${14 * scale}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('+', plusBtnX, headerY)
-
-  // Draw each input pin
-  for (const input of circuit.inputs) {
-    const pinWorldY = boardY + PIN_START_Y + input.order * PIN_SPACING
-    const screen = worldToScreen(boardX, pinWorldY, ui.viewport)
-    const isHovered = ui.hoveredInputId === input.id
-    const isToggleHovered = typeof hoveredButton === 'object' && hoveredButton?.type === 'input-toggle' && hoveredButton.inputId === input.id
-
-    // Draw toggle button (left side)
-    const toggleX = screen.x - 34 * scale
+    // Draw board background
+    ctx.fillStyle = COLORS.boardBg
+    ctx.strokeStyle = COLORS.boardBorder
+    ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.arc(toggleX, screen.y, 10 * scale, 0, Math.PI * 2)
-    if (isToggleHovered) {
-      ctx.fillStyle = input.value ? COLORS.toggleOnHover : COLORS.toggleOffHover
-    } else {
-      ctx.fillStyle = input.value ? COLORS.toggleOn : COLORS.toggleOff
-    }
+    ctx.roundRect(
+      boardScreen.x - boardWidth / 2,
+      boardScreen.y - (BOARD_HEADER_HEIGHT * scale) / 2,
+      boardWidth,
+      boardHeight,
+      8 * scale
+    )
     ctx.fill()
-
-    // Draw toggle value
-    ctx.fillStyle = COLORS.text
-    ctx.font = `bold ${9 * scale}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(input.value ? '1' : '0', toggleX, screen.y)
-
-    // Draw label box outline and label (between toggle and pin, left-justified)
-    const labelBoxX = screen.x - 20 * scale
-    const labelBoxWidth = 52 * scale
-    const labelBoxHeight = 14 * scale
-    ctx.strokeStyle = 'rgba(71, 85, 105, 0.5)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.roundRect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight, 2 * scale)
     ctx.stroke()
 
-    // Clip text to label box
-    ctx.save()
+    // Draw header with label and +/- buttons
+    const headerY = boardScreen.y
+    const isRemoveHovered = hoveredButton === 'input-remove'
+    const isAddHovered = hoveredButton === 'input-add'
+
+    // Draw "-" button (left)
+    const minusBtnX = boardScreen.x - 34 * scale
     ctx.beginPath()
-    ctx.rect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight)
-    ctx.clip()
-
-    ctx.fillStyle = COLORS.textMuted
-    ctx.font = `${9 * scale}px sans-serif`
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(input.label, labelBoxX + 3 * scale, screen.y)
-
-    ctx.restore()
-
-    // Draw pin (right side, for wiring)
-    const pinX = screen.x + (BOARD_WIDTH / 2) * scale
-    const pinRadius = 8 * scale
-    ctx.beginPath()
-    ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
-    ctx.fillStyle = input.value ? COLORS.toggleOn : COLORS.boardPin
+    ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
+    ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
     ctx.fill()
+    ctx.fillStyle = COLORS.text
+    ctx.font = `bold ${14 * scale}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('−', minusBtnX, headerY)
 
-    // Draw hover outline
-    if (isHovered) {
-      ctx.strokeStyle = COLORS.pinHovered
-      ctx.lineWidth = 2
+    // Draw "INPUTS" label (center)
+    ctx.fillStyle = COLORS.text
+    ctx.font = `bold ${10 * scale}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.fillText('INPUTS', boardScreen.x, headerY)
+
+    // Draw "+" button (right)
+    const plusBtnX = boardScreen.x + 34 * scale
+    ctx.beginPath()
+    ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
+    ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
+    ctx.fill()
+    ctx.fillStyle = COLORS.text
+    ctx.font = `bold ${14 * scale}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('+', plusBtnX, headerY)
+
+    // Draw each input row (toggle, label) but not pins
+    for (const input of circuit.inputs) {
+      const pinWorldY = boardY + PIN_START_Y + input.order * PIN_SPACING
+      const screen = worldToScreen(boardX, pinWorldY, ui.viewport)
+      const isToggleHovered = typeof hoveredButton === 'object' && hoveredButton?.type === 'input-toggle' && hoveredButton.inputId === input.id
+
+      // Draw toggle button (left side)
+      const toggleX = screen.x - 34 * scale
+      ctx.beginPath()
+      ctx.arc(toggleX, screen.y, 10 * scale, 0, Math.PI * 2)
+      if (isToggleHovered) {
+        ctx.fillStyle = input.value ? COLORS.toggleOnHover : COLORS.toggleOffHover
+      } else {
+        ctx.fillStyle = input.value ? COLORS.toggleOn : COLORS.toggleOff
+      }
+      ctx.fill()
+
+      // Draw toggle value
+      ctx.fillStyle = COLORS.text
+      ctx.font = `bold ${9 * scale}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(input.value ? '1' : '0', toggleX, screen.y)
+
+      // Draw label box outline and label (between toggle and pin, left-justified)
+      const labelBoxX = screen.x - 20 * scale
+      const labelBoxWidth = 52 * scale
+      const labelBoxHeight = 14 * scale
+      ctx.strokeStyle = 'rgba(71, 85, 105, 0.5)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.roundRect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight, 2 * scale)
       ctx.stroke()
+
+      // Clip text to label box
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight)
+      ctx.clip()
+
+      ctx.fillStyle = COLORS.textMuted
+      ctx.font = `${9 * scale}px sans-serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(input.label, labelBoxX + 3 * scale, screen.y)
+
+      ctx.restore()
+    }
+  } else {
+    // Draw only the pins (after wires)
+    for (const input of circuit.inputs) {
+      const pinWorldY = boardY + PIN_START_Y + input.order * PIN_SPACING
+      const screen = worldToScreen(boardX, pinWorldY, ui.viewport)
+      const isHovered = ui.hoveredInputId === input.id
+
+      // Draw pin (right side, for wiring)
+      const pinX = screen.x + (BOARD_WIDTH / 2) * scale
+      const pinRadius = 8 * scale
+      ctx.beginPath()
+      ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
+      ctx.fillStyle = input.value ? COLORS.toggleOn : COLORS.boardPin
+      ctx.fill()
+
+      // Draw hover outline
+      if (isHovered) {
+        ctx.strokeStyle = COLORS.pinHovered
+        ctx.lineWidth = 2
+        ctx.stroke()
+      }
     }
   }
 }
@@ -465,129 +510,139 @@ function drawOutputBoard(
   circuit: Circuit,
   ui: UIState,
   outputValues: Map<import('../types').OutputId, boolean>,
-  hoveredButton: UIState['hoveredButton']
+  hoveredButton: UIState['hoveredButton'],
+  pinsOnly: boolean = false
 ) {
   const { x: boardX, y: boardY } = circuit.outputBoard
   const outputCount = circuit.outputs.length
   const scale = ui.viewport.zoom
 
-  // Calculate board dimensions
-  const boardWidth = BOARD_WIDTH * scale
-  const pinsHeight = Math.max(0, outputCount * PIN_SPACING)
-  const boardHeight = (BOARD_HEADER_HEIGHT + pinsHeight) * scale
-
   // Get screen position (board position is the center of the header)
   const boardScreen = worldToScreen(boardX, boardY, ui.viewport)
 
-  // Draw board background
-  ctx.fillStyle = COLORS.boardBg
-  ctx.strokeStyle = COLORS.boardBorder
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.roundRect(
-    boardScreen.x - boardWidth / 2,
-    boardScreen.y - (BOARD_HEADER_HEIGHT * scale) / 2,
-    boardWidth,
-    boardHeight,
-    8 * scale
-  )
-  ctx.fill()
-  ctx.stroke()
+  if (!pinsOnly) {
+    // Calculate board dimensions
+    const boardWidth = BOARD_WIDTH * scale
+    const pinsHeight = Math.max(0, outputCount * PIN_SPACING)
+    const boardHeight = (BOARD_HEADER_HEIGHT + pinsHeight) * scale
 
-  // Draw header with label and +/- buttons
-  const headerY = boardScreen.y
-  const isRemoveHovered = hoveredButton === 'output-remove'
-  const isAddHovered = hoveredButton === 'output-add'
-
-  // Draw "-" button (left)
-  const minusBtnX = boardScreen.x - 34 * scale
-  ctx.beginPath()
-  ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
-  ctx.fill()
-  ctx.fillStyle = COLORS.text
-  ctx.font = `bold ${14 * scale}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('−', minusBtnX, headerY)
-
-  // Draw "OUTPUTS" label (center)
-  ctx.fillStyle = COLORS.text
-  ctx.font = `bold ${9 * scale}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.fillText('OUTPUTS', boardScreen.x, headerY)
-
-  // Draw "+" button (right)
-  const plusBtnX = boardScreen.x + 34 * scale
-  ctx.beginPath()
-  ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
-  ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
-  ctx.fill()
-  ctx.fillStyle = COLORS.text
-  ctx.font = `bold ${14 * scale}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('+', plusBtnX, headerY)
-
-  // Draw each output pin
-  for (const output of circuit.outputs) {
-    const pinWorldY = boardY + PIN_START_Y + output.order * PIN_SPACING
-    const screen = worldToScreen(boardX, pinWorldY, ui.viewport)
-    const value = outputValues.get(output.id) ?? false
-    const isHovered = ui.hoveredOutputId === output.id
-
-    // Draw pin (left side, for wiring)
-    const pinX = screen.x - (BOARD_WIDTH / 2) * scale
-    const pinRadius = 8 * scale
+    // Draw board background
+    ctx.fillStyle = COLORS.boardBg
+    ctx.strokeStyle = COLORS.boardBorder
+    ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
-    ctx.fillStyle = value ? COLORS.toggleOn : COLORS.boardPin
+    ctx.roundRect(
+      boardScreen.x - boardWidth / 2,
+      boardScreen.y - (BOARD_HEADER_HEIGHT * scale) / 2,
+      boardWidth,
+      boardHeight,
+      8 * scale
+    )
     ctx.fill()
-
-    // Draw hover outline
-    if (isHovered) {
-      ctx.strokeStyle = COLORS.pinHovered
-      ctx.lineWidth = 2
-      ctx.stroke()
-    }
-
-    // Draw label box outline and label (between pin and indicator, right-justified)
-    const labelBoxWidth = 52 * scale
-    const labelBoxHeight = 14 * scale
-    const labelBoxX = screen.x - 32 * scale
-    ctx.strokeStyle = 'rgba(71, 85, 105, 0.5)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.roundRect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight, 2 * scale)
     ctx.stroke()
 
-    // Clip text to label box
-    ctx.save()
+    // Draw header with label and +/- buttons
+    const headerY = boardScreen.y
+    const isRemoveHovered = hoveredButton === 'output-remove'
+    const isAddHovered = hoveredButton === 'output-add'
+
+    // Draw "-" button (left)
+    const minusBtnX = boardScreen.x - 34 * scale
     ctx.beginPath()
-    ctx.rect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight)
-    ctx.clip()
-
-    ctx.fillStyle = COLORS.textMuted
-    ctx.font = `${9 * scale}px sans-serif`
-    ctx.textAlign = 'right'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(output.label, labelBoxX + labelBoxWidth - 3 * scale, screen.y)
-
-    ctx.restore()
-
-    // Draw value indicator (right side)
-    const indicatorX = screen.x + 34 * scale
-    ctx.beginPath()
-    ctx.arc(indicatorX, screen.y, 10 * scale, 0, Math.PI * 2)
-    ctx.fillStyle = value ? COLORS.toggleOn : COLORS.toggleOff
+    ctx.arc(minusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
+    ctx.fillStyle = isRemoveHovered ? COLORS.removeButtonHover : COLORS.removeButton
     ctx.fill()
+    ctx.fillStyle = COLORS.text
+    ctx.font = `bold ${14 * scale}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('−', minusBtnX, headerY)
 
-    // Draw value
+    // Draw "OUTPUTS" label (center)
     ctx.fillStyle = COLORS.text
     ctx.font = `bold ${9 * scale}px sans-serif`
     ctx.textAlign = 'center'
+    ctx.fillText('OUTPUTS', boardScreen.x, headerY)
+
+    // Draw "+" button (right)
+    const plusBtnX = boardScreen.x + 34 * scale
+    ctx.beginPath()
+    ctx.arc(plusBtnX, headerY, 10 * scale, 0, Math.PI * 2)
+    ctx.fillStyle = isAddHovered ? COLORS.addButtonHover : COLORS.addButton
+    ctx.fill()
+    ctx.fillStyle = COLORS.text
+    ctx.font = `bold ${14 * scale}px sans-serif`
+    ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(value ? '1' : '0', indicatorX, screen.y)
+    ctx.fillText('+', plusBtnX, headerY)
+
+    // Draw each output row (label, indicator) but not pins
+    for (const output of circuit.outputs) {
+      const pinWorldY = boardY + PIN_START_Y + output.order * PIN_SPACING
+      const screen = worldToScreen(boardX, pinWorldY, ui.viewport)
+      const value = outputValues.get(output.id) ?? false
+
+      // Draw label box outline and label (between pin and indicator, right-justified)
+      const labelBoxWidth = 52 * scale
+      const labelBoxHeight = 14 * scale
+      const labelBoxX = screen.x - 32 * scale
+      ctx.strokeStyle = 'rgba(71, 85, 105, 0.5)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.roundRect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight, 2 * scale)
+      ctx.stroke()
+
+      // Clip text to label box
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(labelBoxX, screen.y - labelBoxHeight / 2, labelBoxWidth, labelBoxHeight)
+      ctx.clip()
+
+      ctx.fillStyle = COLORS.textMuted
+      ctx.font = `${9 * scale}px sans-serif`
+      ctx.textAlign = 'right'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(output.label, labelBoxX + labelBoxWidth - 3 * scale, screen.y)
+
+      ctx.restore()
+
+      // Draw value indicator (right side)
+      const indicatorX = screen.x + 34 * scale
+      ctx.beginPath()
+      ctx.arc(indicatorX, screen.y, 10 * scale, 0, Math.PI * 2)
+      ctx.fillStyle = value ? COLORS.toggleOn : COLORS.toggleOff
+      ctx.fill()
+
+      // Draw value
+      ctx.fillStyle = COLORS.text
+      ctx.font = `bold ${9 * scale}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(value ? '1' : '0', indicatorX, screen.y)
+    }
+  } else {
+    // Draw only the pins (after wires)
+    for (const output of circuit.outputs) {
+      const pinWorldY = boardY + PIN_START_Y + output.order * PIN_SPACING
+      const screen = worldToScreen(boardX, pinWorldY, ui.viewport)
+      const value = outputValues.get(output.id) ?? false
+      const isHovered = ui.hoveredOutputId === output.id
+
+      // Draw pin (left side, for wiring)
+      const pinX = screen.x - (BOARD_WIDTH / 2) * scale
+      const pinRadius = 8 * scale
+      ctx.beginPath()
+      ctx.arc(pinX, screen.y, pinRadius, 0, Math.PI * 2)
+      ctx.fillStyle = value ? COLORS.toggleOn : COLORS.boardPin
+      ctx.fill()
+
+      // Draw hover outline
+      if (isHovered) {
+        ctx.strokeStyle = COLORS.pinHovered
+        ctx.lineWidth = 2
+        ctx.stroke()
+      }
+    }
   }
 }
 

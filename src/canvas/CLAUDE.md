@@ -22,14 +22,20 @@ Key refs:
 Pure drawing functions. Called every frame via `requestAnimationFrame`.
 
 Key functions:
-- `renderFrame()` - main entry, draws everything
+- `renderFrame()` - main entry, draws everything in order: grid → board backgrounds → wires → board pins → components → marquee
 - `drawComponent()` - gate body, label, pins (receives simulation data for pin activation)
-- `drawWire()` - uses `computeWirePath()` for intelligent routing around obstacles
-- `drawWiringPreview()` - live preview during wire creation, also uses pathfinding
-- `drawInputBoard()` / `drawOutputBoard()` - board with header buttons, supports hover states
+- `drawWire()` - draws wire with border effect (darker outline + main color), thickness scales with zoom
+- `drawWiringPreview()` - live preview during wire creation with dashed line
+- `drawInputBoard()` / `drawOutputBoard()` - board with header buttons, supports `pinsOnly` param for layered rendering
+
+Render order ensures wires appear behind board pins but in front of board backgrounds.
+
+Wire styling:
+- Border (5px) + main line (3px), scales with zoom for constant world size
+- Colors: off (gray), on (green), selected (orange) with darker border variants
 
 ### wirePathfinding.ts
-A* pathfinding for wire routing around obstacles.
+Simple L-shape wire routing.
 
 Key functions:
 - `computeWirePath(wire, circuit, customComponents)` - returns waypoints for a wire
@@ -39,10 +45,8 @@ Key functions:
 - `clearPathsForInputBoard(circuit)` / `clearPathsForOutputBoard(circuit)` - invalidate on board move
 
 Algorithm:
-- Default: L-shaped path (horizontal → vertical → horizontal with midpoint)
-- If L-shape intersects obstacles: A* pathfinding with turn penalty
+- L-shaped path: horizontal from source → vertical at midpoint → horizontal to target
 - Wires exit straight from source pins (20 units right) and enter straight to target pins (20 units left)
-- Grid step: 10 units (half-grid), obstacle padding: 15 units, turn penalty: 5 units
 - Paths cached by wireId, invalidated when connected components/boards move
 
 Layout constants (must match hitTest.ts):

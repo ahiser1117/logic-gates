@@ -5,6 +5,7 @@ import {
   clearPathsForComponent,
   clearPathsForInputBoard,
   clearPathsForOutputBoard,
+  clearWirePath,
 } from '../canvas/wirePathfinding'
 
 // Enable Immer support for Map and Set
@@ -188,6 +189,7 @@ export const useStore = create<AppState>()(
         state.circuit.wires = state.circuit.wires.filter((w) => w.id !== id)
         state.ui.selection.wires.delete(id)
       })
+      clearWirePath(id)
     },
 
     addInput: (label) => {
