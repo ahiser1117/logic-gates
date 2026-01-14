@@ -44,16 +44,25 @@ interface CustomComponentDefinition {
 
 **Key Types**:
 - `Component` - gate instance with id, type, x, y
-- `Wire` - connection with source, target, and optional `waypoints: Point[]` for custom paths
+- `Wire` - connection with source, target, and optional `waypoints?: Point[]` for custom paths
 - `Circuit` - full state including boards
 - `BoardPosition` - x, y for draggable boards
 - `Point` - simple `{ x: number, y: number }` for coordinates
+
+**ID Creation Helpers** (for casting numbers/strings to branded types):
+```typescript
+createComponentId(n: number) → ComponentId
+createWireId(n: number) → WireId
+createInputId(n: number) → InputId
+createOutputId(n: number) → OutputId
+createCustomComponentId(uuid: string) → CustomComponentId
+```
 
 ### ui.ts
 UI state types.
 
 - `Viewport` - panX, panY, zoom
-- `DragState` - type (`none`, `component`, `pan`, `marquee`, `wireHandle`) + coordinates + optional payload
+- `DragState` - type (`none`, `component`, `palette`, `pan`, `marquee`, `wireHandle`) + coordinates + optional payload
 - `PinRef` - union type for referencing any pin:
   ```typescript
   type PinRef =

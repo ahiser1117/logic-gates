@@ -30,6 +30,20 @@ import type {
   CustomComponentDefinition,
   Point,
 } from '../types/circuit'
+
+// Initial wire state captured at drag start for L-shape recalculation
+export interface InitialWireState {
+  wireId: WireId
+  // When both ends are moving, use translation mode
+  bothEndsMoving?: boolean          // True if both source and target components are selected
+  originalWaypoints?: Point[]       // Original waypoints for translation mode
+  // L-shape recalculation mode (when only one end is moving)
+  xRatio: number                    // Bend X as proportion from moving end to anchor
+  anchorX: number                   // Anchor point X (fixed during drag)
+  anchorY: number                   // Anchor point Y (fixed during drag)
+  isSourceEnd: boolean              // Is moving component at source end of wire
+  remainingWaypoints: Point[]       // Waypoints beyond the L-shape (stay fixed)
+}
 import { createCustomComponentId } from '../types/circuit'
 import { validateCircuitForComponent } from '../utils/validation'
 import { computePinLayout } from '../utils/pinLayout'
@@ -58,7 +72,7 @@ interface AppState {
   // Circuit actions
   addComponent: (type: ComponentType, x: number, y: number) => ComponentId
   removeComponent: (id: ComponentId) => void
-  moveComponent: (id: ComponentId, x: number, y: number) => void
+  moveComponent: (id: ComponentId, x: number, y: number, initialWireState?: InitialWireState[]) => void
   moveSelectedComponents: (dx: number, dy: number) => void
 
   addWire: (source: WireSource, target: WireTarget) => WireId | null
@@ -74,8 +88,8 @@ interface AppState {
   removeOutput: (id: OutputId) => void
   renameOutput: (id: OutputId, label: string) => void
 
-  moveInputBoard: (x: number, y: number) => void
-  moveOutputBoard: (x: number, y: number) => void
+  moveInputBoard: (x: number, y: number, initialWireState?: InitialWireState[]) => void
+  moveOutputBoard: (x: number, y: number, initialWireState?: InitialWireState[]) => void
 
   // Custom component actions
   createCustomComponent: (name: string) => CustomComponentId | null
@@ -147,72 +161,67 @@ export const useStore = create<AppState>()(
       })
     },
 
-    moveComponent: (id, x, y) => {
+    moveComponent: (id, x, y, initialWireState) => {
       set((state) => {
         const component = state.circuit.components.find((c) => c.id === id)
         if (component) {
-          // Get old endpoint positions for connected wires BEFORE moving
-          const wireEndpoints = new Map<WireId, { oldSource: Point | null; oldTarget: Point | null }>()
-          for (const wire of state.circuit.wires) {
-            if (!wire.waypoints || wire.waypoints.length === 0) continue
-            const isSource = wire.source.type === 'component' && wire.source.componentId === id
-            const isTarget = wire.target.type === 'component' && wire.target.componentId === id
-            if (isSource || isTarget) {
-              wireEndpoints.set(wire.id, {
-                oldSource: getWireEndpointWorld(wire.source, state.circuit, state.customComponents),
-                oldTarget: getWireEndpointWorld(wire.target, state.circuit, state.customComponents),
-              })
-            }
-          }
-
           // Move the component
           component.x = x
           component.y = y
 
-          // Adjust waypoints for connected wires using proportional positioning
-          for (const wire of state.circuit.wires) {
-            if (!wire.waypoints || wire.waypoints.length === 0) continue
+          // If initial wire state is provided, use it for waypoint updates
+          if (initialWireState && initialWireState.length > 0) {
+            const initialStateMap = new Map(initialWireState.map((s) => [s.wireId, s]))
 
-            const endpoints = wireEndpoints.get(wire.id)
-            if (!endpoints) continue
+            for (const wire of state.circuit.wires) {
+              const initial = initialStateMap.get(wire.id)
+              if (!initial) continue
 
-            const { oldSource, oldTarget } = endpoints
-            if (!oldSource || !oldTarget) continue
+              // Translation mode: both ends moving, translate all waypoints
+              if (initial.bothEndsMoving && initial.originalWaypoints) {
+                // Get current source position and compute delta from original
+                const sourcePos = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
+                if (!sourcePos) continue
 
-            // Get new endpoint positions AFTER moving
-            const newSource = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
-            const newTarget = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
-            if (!newSource || !newTarget) continue
+                // The delta is already applied to the component, so we can compute it from
+                // the current position vs the anchor (which was the original source position)
+                const dx = sourcePos.x - initial.anchorX
+                const dy = sourcePos.y - initial.anchorY
 
-            // Calculate the proportional position of each waypoint and adjust
-            wire.waypoints = wire.waypoints.map((wp) => {
-              // Calculate X proportion (where along the X axis is this waypoint?)
-              const oldDx = oldTarget.x - oldSource.x
-              const newDx = newTarget.x - newSource.x
-              let newX: number
-              if (Math.abs(oldDx) < 1) {
-                // Source and target were vertically aligned, use delta from source
-                newX = wp.x + (newSource.x - oldSource.x)
-              } else {
-                const propX = (wp.x - oldSource.x) / oldDx
-                newX = newSource.x + propX * newDx
+                // Translate all waypoints by the same delta
+                wire.waypoints = initial.originalWaypoints.map(wp => ({
+                  x: snapToGrid(wp.x + dx, GRID_STEP),
+                  y: snapToGrid(wp.y + dy, GRID_STEP)
+                }))
+                continue
               }
 
-              // Calculate Y proportion
-              const oldDy = oldTarget.y - oldSource.y
-              const newDy = newTarget.y - newSource.y
-              let newY: number
-              if (Math.abs(oldDy) < 1) {
-                // Source and target were horizontally aligned, use delta from source
-                newY = wp.y + (newSource.y - oldSource.y)
-              } else {
-                const propY = (wp.y - oldSource.y) / oldDy
-                newY = newSource.y + propY * newDy
-              }
+              // L-shape recalculation mode: only one end moving
+              const { xRatio, anchorX, anchorY, isSourceEnd, remainingWaypoints } = initial
 
-              // Snap to half-grid for clean wire routing
-              return { x: snapToGrid(newX, GRID_STEP), y: snapToGrid(newY, GRID_STEP) }
-            })
+              // Get the new position of the moving end
+              const movingEnd = isSourceEnd
+                ? getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
+                : getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
+              if (!movingEnd) continue
+
+              // Calculate new bend X using proportional ratio
+              const newBendX = snapToGrid(
+                movingEnd.x + xRatio * (anchorX - movingEnd.x),
+                GRID_STEP
+              )
+
+              // Create L-shape bends
+              const bend1 = { x: newBendX, y: movingEnd.y }   // At moving end's Y
+              const bend2 = { x: newBendX, y: anchorY }        // At anchor's Y
+
+              // Reconstruct waypoints
+              if (isSourceEnd) {
+                wire.waypoints = [bend1, bend2, ...remainingWaypoints]
+              } else {
+                wire.waypoints = [...remainingWaypoints, bend2, bend1]
+              }
+            }
           }
 
           // Clear cached wire paths for this component
@@ -362,68 +371,43 @@ export const useStore = create<AppState>()(
       })
     },
 
-    moveInputBoard: (x, y) => {
+    moveInputBoard: (x, y, initialWireState) => {
       set((state) => {
-        // Get old endpoint positions for connected wires BEFORE moving
-        const wireEndpoints = new Map<WireId, { oldSource: Point | null; oldTarget: Point | null }>()
-        for (const wire of state.circuit.wires) {
-          if (!wire.waypoints || wire.waypoints.length === 0) continue
-          if (wire.source.type === 'input') {
-            wireEndpoints.set(wire.id, {
-              oldSource: getWireEndpointWorld(wire.source, state.circuit, state.customComponents),
-              oldTarget: getWireEndpointWorld(wire.target, state.circuit, state.customComponents),
-            })
-          }
-        }
-
         // Move the board
         state.circuit.inputBoard.x = x
         state.circuit.inputBoard.y = y
 
-        // Adjust waypoints for connected wires using proportional positioning
-        for (const wire of state.circuit.wires) {
-          if (!wire.waypoints || wire.waypoints.length === 0) continue
+        // If initial wire state is provided, use it for L-shape recalculation
+        if (initialWireState && initialWireState.length > 0) {
+          const initialStateMap = new Map(initialWireState.map((s) => [s.wireId, s]))
 
-          const endpoints = wireEndpoints.get(wire.id)
-          if (!endpoints) continue
+          for (const wire of state.circuit.wires) {
+            const initial = initialStateMap.get(wire.id)
+            if (!initial) continue
 
-          const { oldSource, oldTarget } = endpoints
-          if (!oldSource || !oldTarget) continue
+            const { xRatio, anchorX, anchorY, isSourceEnd, remainingWaypoints } = initial
 
-          // Get new endpoint positions AFTER moving
-          const newSource = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
-          const newTarget = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
-          if (!newSource || !newTarget) continue
+            // Get the new position of the moving end (input board pins are always sources)
+            const movingEnd = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
+            if (!movingEnd) continue
 
-          // Calculate the proportional position of each waypoint and adjust
-          wire.waypoints = wire.waypoints.map((wp) => {
-            // Calculate X proportion (where along the X axis is this waypoint?)
-            const oldDx = oldTarget.x - oldSource.x
-            const newDx = newTarget.x - newSource.x
-            let newX: number
-            if (Math.abs(oldDx) < 1) {
-              // Source and target were vertically aligned, use delta from source
-              newX = wp.x + (newSource.x - oldSource.x)
+            // Calculate new bend X using proportional ratio
+            const newBendX = snapToGrid(
+              movingEnd.x + xRatio * (anchorX - movingEnd.x),
+              GRID_STEP
+            )
+
+            // Create L-shape bends
+            const bend1 = { x: newBendX, y: movingEnd.y }   // At moving end's Y
+            const bend2 = { x: newBendX, y: anchorY }        // At anchor's Y
+
+            // Reconstruct waypoints (input board is always source end)
+            if (isSourceEnd) {
+              wire.waypoints = [bend1, bend2, ...remainingWaypoints]
             } else {
-              const propX = (wp.x - oldSource.x) / oldDx
-              newX = newSource.x + propX * newDx
+              wire.waypoints = [...remainingWaypoints, bend2, bend1]
             }
-
-            // Calculate Y proportion
-            const oldDy = oldTarget.y - oldSource.y
-            const newDy = newTarget.y - newSource.y
-            let newY: number
-            if (Math.abs(oldDy) < 1) {
-              // Source and target were horizontally aligned, use delta from source
-              newY = wp.y + (newSource.y - oldSource.y)
-            } else {
-              const propY = (wp.y - oldSource.y) / oldDy
-              newY = newSource.y + propY * newDy
-            }
-
-            // Snap to half-grid for clean wire routing
-            return { x: snapToGrid(newX, GRID_STEP), y: snapToGrid(newY, GRID_STEP) }
-          })
+          }
         }
 
         // Clear cached wire paths for input board wires
@@ -431,68 +415,43 @@ export const useStore = create<AppState>()(
       })
     },
 
-    moveOutputBoard: (x, y) => {
+    moveOutputBoard: (x, y, initialWireState) => {
       set((state) => {
-        // Get old endpoint positions for connected wires BEFORE moving
-        const wireEndpoints = new Map<WireId, { oldSource: Point | null; oldTarget: Point | null }>()
-        for (const wire of state.circuit.wires) {
-          if (!wire.waypoints || wire.waypoints.length === 0) continue
-          if (wire.target.type === 'output') {
-            wireEndpoints.set(wire.id, {
-              oldSource: getWireEndpointWorld(wire.source, state.circuit, state.customComponents),
-              oldTarget: getWireEndpointWorld(wire.target, state.circuit, state.customComponents),
-            })
-          }
-        }
-
         // Move the board
         state.circuit.outputBoard.x = x
         state.circuit.outputBoard.y = y
 
-        // Adjust waypoints for connected wires using proportional positioning
-        for (const wire of state.circuit.wires) {
-          if (!wire.waypoints || wire.waypoints.length === 0) continue
+        // If initial wire state is provided, use it for L-shape recalculation
+        if (initialWireState && initialWireState.length > 0) {
+          const initialStateMap = new Map(initialWireState.map((s) => [s.wireId, s]))
 
-          const endpoints = wireEndpoints.get(wire.id)
-          if (!endpoints) continue
+          for (const wire of state.circuit.wires) {
+            const initial = initialStateMap.get(wire.id)
+            if (!initial) continue
 
-          const { oldSource, oldTarget } = endpoints
-          if (!oldSource || !oldTarget) continue
+            const { xRatio, anchorX, anchorY, isSourceEnd, remainingWaypoints } = initial
 
-          // Get new endpoint positions AFTER moving
-          const newSource = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
-          const newTarget = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
-          if (!newSource || !newTarget) continue
+            // Get the new position of the moving end (output board pins are always targets)
+            const movingEnd = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
+            if (!movingEnd) continue
 
-          // Calculate the proportional position of each waypoint and adjust
-          wire.waypoints = wire.waypoints.map((wp) => {
-            // Calculate X proportion (where along the X axis is this waypoint?)
-            const oldDx = oldTarget.x - oldSource.x
-            const newDx = newTarget.x - newSource.x
-            let newX: number
-            if (Math.abs(oldDx) < 1) {
-              // Source and target were vertically aligned, use delta from source
-              newX = wp.x + (newSource.x - oldSource.x)
+            // Calculate new bend X using proportional ratio
+            const newBendX = snapToGrid(
+              movingEnd.x + xRatio * (anchorX - movingEnd.x),
+              GRID_STEP
+            )
+
+            // Create L-shape bends
+            const bend1 = { x: newBendX, y: movingEnd.y }   // At moving end's Y
+            const bend2 = { x: newBendX, y: anchorY }        // At anchor's Y
+
+            // Reconstruct waypoints (output board is always target end)
+            if (isSourceEnd) {
+              wire.waypoints = [bend1, bend2, ...remainingWaypoints]
             } else {
-              const propX = (wp.x - oldSource.x) / oldDx
-              newX = newSource.x + propX * newDx
+              wire.waypoints = [...remainingWaypoints, bend2, bend1]
             }
-
-            // Calculate Y proportion
-            const oldDy = oldTarget.y - oldSource.y
-            const newDy = newTarget.y - newSource.y
-            let newY: number
-            if (Math.abs(oldDy) < 1) {
-              // Source and target were horizontally aligned, use delta from source
-              newY = wp.y + (newSource.y - oldSource.y)
-            } else {
-              const propY = (wp.y - oldSource.y) / oldDy
-              newY = newSource.y + propY * newDy
-            }
-
-            // Snap to half-grid for clean wire routing
-            return { x: snapToGrid(newX, GRID_STEP), y: snapToGrid(newY, GRID_STEP) }
-          })
+          }
         }
 
         // Clear cached wire paths for output board wires

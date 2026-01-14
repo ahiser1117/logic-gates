@@ -6,15 +6,13 @@ Compiles circuits to netlists and evaluates boolean logic.
 
 1. **Compile** (`compiler.ts`): Circuit → Netlist
    - Groups wires into nets (one driver, many readers)
-   - Creates compiled gate representations
+   - Creates compiled component representations
+   - Runs topological sort and stores result in netlist
+   - Validates circuit and stores any errors
 
-2. **Topological Sort** (`topological.ts`): Order gates for evaluation
-   - Kahn's algorithm
-   - Detects cycles (returns null if cycle found)
-
-3. **Evaluate** (`evaluator.ts`): Compute output values
+2. **Evaluate** (`evaluator.ts`): Compute output values
    - Sets input net values from toggles
-   - Walks topo order, evaluates each gate
+   - Walks topo order, evaluates each component
    - NAND: `!(A && B)`
    - NOR: `!(A || B)`
    - Custom components: evaluated recursively (hierarchical, not flattened)
@@ -24,37 +22,55 @@ Compiles circuits to netlists and evaluates boolean logic.
 ### compiler.ts
 `compile(circuit, customComponents?)` → `Netlist`
 
-Creates nets from wires, maps component pins to net indices.
+Creates nets from wires, maps component pins to net indices, runs topological sort, validates circuit.
 
 Helper: `getComponentDefinition(type, customComponents?)` - returns width, height, pins for any component type (primitive or custom).
 
 ### topological.ts
-`topologicalSort(netlist)` → `number[] | null`
+`topologicalSort(components, nets)` → `TopoResult`
 
-Returns gate evaluation order, or null if cycle detected.
+Returns evaluation order using Kahn's algorithm.
+```typescript
+interface TopoResult {
+  order: number[]           // Component indices in evaluation order
+  hasCycle: boolean         // True if cycle detected
+  cycleComponents: ComponentId[]  // IDs of components in cycle
+}
+```
 
 ### evaluator.ts
-`evaluateCircuit(circuit, netlist, order)` → `Map<OutputId, boolean>`
+`evaluate(netlist, inputValues, customComponents?, depth?)` → `Map<OutputId, boolean>`
 
-Propagates values through the circuit.
+Propagates values through the circuit. The `depth` parameter prevents infinite recursion in custom components.
 
 ### types.ts
 ```typescript
 interface Netlist {
-  nets: Net[]           // Value-carrying wires
-  gates: CompiledGate[] // Gates with net references
-  inputNets: Map<InputId, number>
-  outputNets: Map<OutputId, number>
+  nets: Net[]                    // Value-carrying wires
+  components: CompiledComponent[] // Components with net references
+  topoOrder: number[]            // Evaluation order (from topological sort)
+  valid: boolean                 // False if cycle or other error
+  errors: ValidationError[]      // Cycle info, floating pins, etc.
+}
+
+interface CompiledComponent {
+  id: ComponentId
+  type: ComponentType
+  inputNetIds: NetId[]
+  outputNetIds: NetId[]  // Array to support multiple outputs
 }
 ```
 
 ## Usage
 ```typescript
-const netlist = compileCircuit(circuit)
-if (!netlist) return // compilation error
+const netlist = compile(circuit, customComponents)
+if (!netlist.valid) {
+  console.error(netlist.errors)
+  return
+}
 
-const order = topologicalSort(netlist)
-if (!order) return // cycle detected
+const inputValues = new Map<InputId, boolean>()
+// ... populate from circuit.inputs
 
-const outputs = evaluateCircuit(circuit, netlist, order)
+const outputs = evaluate(netlist, inputValues, customComponents)
 ```

@@ -37,5 +37,6 @@ Utility functions for custom component creation.
 1. User interacts with canvas (mouse events)
 2. `hitTest()` determines what was clicked
 3. Store actions update circuit/UI state
-4. Canvas re-renders via `requestAnimationFrame` loop
-5. Simulation recomputes on structural changes
+4. Wire paths recalculate when components/boards move (L-shape waypoint adjustment)
+5. Canvas re-renders via `requestAnimationFrame` loop
+6. Simulation recomputes on structural changes

@@ -1,12 +1,12 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
-import { useStore } from '../store'
+import { useStore, type InitialWireState } from '../store'
 import { useSimulation } from '../hooks/useSimulation'
 import { renderFrame } from './renderer'
 import { hitTest } from './hitTest'
 import { screenToWorld, worldToScreen, snapToGrid } from './grid'
 import { getComponentDefinition } from '../simulation'
 import type { ComponentType, ComponentId, InputId, OutputId, WireId, Point } from '../types'
-import { computeWirePath, GRID_STEP } from './wirePathfinding'
+import { computeWirePath, getWireEndpointWorld, GRID_STEP } from './wirePathfinding'
 import './CanvasWorkspace.css'
 
 const GRID_SIZE = 20
@@ -92,7 +92,9 @@ export function CanvasWorkspace() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragStartPositions = useRef<Map<ComponentId, { x: number; y: number }>>(new Map())
+  const initialWireState = useRef<InitialWireState[]>([])
   const boardDragStart = useRef<{ board: 'input' | 'output'; x: number; y: number } | null>(null)
+  const boardInitialWireState = useRef<InitialWireState[]>([])
   const wireHandleDragStart = useRef<{ wireId: WireId; handleIndex: number; originalPath: Point[] } | null>(null)
   const [labelEdit, setLabelEdit] = useState<LabelEdit | null>(null)
   const labelInputRef = useRef<HTMLInputElement>(null)
@@ -263,6 +265,49 @@ export function CanvasWorkspace() {
             x: circuit.inputBoard.x,
             y: circuit.inputBoard.y,
           }
+          // Capture initial wire state for wires connected to input board
+          boardInitialWireState.current = []
+          for (const wire of circuit.wires) {
+            if (wire.source.type !== 'input') continue
+
+            const sourcePos = getWireEndpointWorld(wire.source, circuit, customComponents)
+            const targetPos = getWireEndpointWorld(wire.target, circuit, customComponents)
+            if (!sourcePos || !targetPos) continue
+
+            // Get current waypoints - if none, compute auto L-shape and extract bends
+            let waypoints = wire.waypoints || []
+            if (waypoints.length === 0) {
+              const path = computeWirePath(wire, circuit, customComponents)
+              if (path.length >= 4) {
+                waypoints = path.slice(1, -1)
+              } else if (path.length === 3) {
+                waypoints = [path[1]!, path[1]!]
+              } else {
+                const midX = (sourcePos.x + targetPos.x) / 2
+                waypoints = [
+                  { x: midX, y: sourcePos.y },
+                  { x: midX, y: targetPos.y }
+                ]
+              }
+            }
+
+            // Input board pins are always sources, so isSourceEnd = true
+            const anchor = waypoints.length > 2
+              ? waypoints[2]!
+              : targetPos
+            const bendX = waypoints[0]?.x ?? sourcePos.x
+            const denom = anchor.x - sourcePos.x
+            const xRatio = denom !== 0 ? (bendX - sourcePos.x) / denom : 0.5
+
+            boardInitialWireState.current.push({
+              wireId: wire.id,
+              xRatio: isFinite(xRatio) ? xRatio : 0.5,
+              anchorX: anchor.x,
+              anchorY: anchor.y,
+              isSourceEnd: true,
+              remainingWaypoints: waypoints.slice(2)
+            })
+          }
           setDrag({
             type: 'component', // Reuse component drag type for boards
             startX: world.x,
@@ -279,6 +324,50 @@ export function CanvasWorkspace() {
             board: 'output',
             x: circuit.outputBoard.x,
             y: circuit.outputBoard.y,
+          }
+          // Capture initial wire state for wires connected to output board
+          boardInitialWireState.current = []
+          for (const wire of circuit.wires) {
+            if (wire.target.type !== 'output') continue
+
+            const sourcePos = getWireEndpointWorld(wire.source, circuit, customComponents)
+            const targetPos = getWireEndpointWorld(wire.target, circuit, customComponents)
+            if (!sourcePos || !targetPos) continue
+
+            // Get current waypoints - if none, compute auto L-shape and extract bends
+            let waypoints = wire.waypoints || []
+            if (waypoints.length === 0) {
+              const path = computeWirePath(wire, circuit, customComponents)
+              if (path.length >= 4) {
+                waypoints = path.slice(1, -1)
+              } else if (path.length === 3) {
+                waypoints = [path[1]!, path[1]!]
+              } else {
+                const midX = (sourcePos.x + targetPos.x) / 2
+                waypoints = [
+                  { x: midX, y: sourcePos.y },
+                  { x: midX, y: targetPos.y }
+                ]
+              }
+            }
+
+            // Output board pins are always targets, so isSourceEnd = false
+            const wpLen = waypoints.length
+            const anchor = wpLen > 2
+              ? waypoints[wpLen - 3]!
+              : sourcePos
+            const bendX = waypoints[wpLen - 1]?.x ?? targetPos.x
+            const denom = anchor.x - targetPos.x
+            const xRatio = denom !== 0 ? (bendX - targetPos.x) / denom : 0.5
+
+            boardInitialWireState.current.push({
+              wireId: wire.id,
+              xRatio: isFinite(xRatio) ? xRatio : 0.5,
+              anchorX: anchor.x,
+              anchorY: anchor.y,
+              isSourceEnd: false,
+              remainingWaypoints: waypoints.slice(0, -2)
+            })
           }
           setDrag({
             type: 'component', // Reuse component drag type for boards
@@ -344,6 +433,97 @@ export function CanvasWorkspace() {
             const comp = circuit.components.find((c) => c.id === id)
             if (comp) {
               dragStartPositions.current.set(id, { x: comp.x, y: comp.y })
+            }
+          }
+
+          // Capture initial wire state for all wires connected to components being moved
+          initialWireState.current = []
+          for (const wire of circuit.wires) {
+            const isSourceMoving = wire.source.type === 'component' && componentsToMove.has(wire.source.componentId)
+            const isTargetMoving = wire.target.type === 'component' && componentsToMove.has(wire.target.componentId)
+            if (!isSourceMoving && !isTargetMoving) continue
+
+            const sourcePos = getWireEndpointWorld(wire.source, circuit, customComponents)
+            const targetPos = getWireEndpointWorld(wire.target, circuit, customComponents)
+            if (!sourcePos || !targetPos) continue
+
+            // Get current waypoints - if none, compute auto L-shape and extract bends
+            let waypoints = wire.waypoints || []
+            if (waypoints.length === 0) {
+              // Compute auto L-shape path and extract the 2 bend points
+              const path = computeWirePath(wire, circuit, customComponents)
+              // Path is typically [pin, bend1, bend2, pin] after simplification
+              // Extract middle points as waypoints
+              if (path.length >= 4) {
+                waypoints = path.slice(1, -1)
+              } else if (path.length === 3) {
+                // Single bend case - use it as both bends for L-shape
+                waypoints = [path[1]!, path[1]!]
+              } else {
+                // Direct connection - create default L-shape
+                const midX = (sourcePos.x + targetPos.x) / 2
+                waypoints = [
+                  { x: midX, y: sourcePos.y },
+                  { x: midX, y: targetPos.y }
+                ]
+              }
+            }
+
+            // When BOTH ends are moving, use translation mode
+            if (isSourceMoving && isTargetMoving) {
+              initialWireState.current.push({
+                wireId: wire.id,
+                bothEndsMoving: true,
+                originalWaypoints: waypoints.map(wp => ({ ...wp })),
+                // Store original source position to compute delta later
+                anchorX: sourcePos.x,
+                anchorY: sourcePos.y,
+                // These fields are required but unused in translation mode
+                xRatio: 0,
+                isSourceEnd: true,
+                remainingWaypoints: []
+              })
+              continue
+            }
+
+            // Determine which end is moving
+            const isSourceEnd = isSourceMoving
+
+            if (isSourceEnd) {
+              // L-shape is first 2 waypoints, anchor is 3rd waypoint or target
+              const anchor = waypoints.length > 2
+                ? waypoints[2]!
+                : targetPos
+              const bendX = waypoints[0]?.x ?? sourcePos.x
+              const denom = anchor.x - sourcePos.x
+              const xRatio = denom !== 0 ? (bendX - sourcePos.x) / denom : 0.5
+
+              initialWireState.current.push({
+                wireId: wire.id,
+                xRatio: isFinite(xRatio) ? xRatio : 0.5,
+                anchorX: anchor.x,
+                anchorY: anchor.y,
+                isSourceEnd: true,
+                remainingWaypoints: waypoints.slice(2)
+              })
+            } else {
+              // L-shape is last 2 waypoints, anchor is 3rd-from-last or source
+              const wpLen = waypoints.length
+              const anchor = wpLen > 2
+                ? waypoints[wpLen - 3]!
+                : sourcePos
+              const bendX = waypoints[wpLen - 1]?.x ?? targetPos.x
+              const denom = anchor.x - targetPos.x
+              const xRatio = denom !== 0 ? (bendX - targetPos.x) / denom : 0.5
+
+              initialWireState.current.push({
+                wireId: wire.id,
+                xRatio: isFinite(xRatio) ? xRatio : 0.5,
+                anchorX: anchor.x,
+                anchorY: anchor.y,
+                isSourceEnd: false,
+                remainingWaypoints: waypoints.slice(0, -2)
+              })
             }
           }
 
@@ -482,16 +662,16 @@ export function CanvasWorkspace() {
           const newX = snapToGrid(boardDragStart.current.x + dx, GRID_SIZE)
           const newY = snapToGrid(boardDragStart.current.y + dy, GRID_SIZE)
           if (boardDragStart.current.board === 'input') {
-            moveInputBoard(newX, newY)
+            moveInputBoard(newX, newY, boardInitialWireState.current)
           } else {
-            moveOutputBoard(newX, newY)
+            moveOutputBoard(newX, newY, boardInitialWireState.current)
           }
         } else {
           // Move all selected components relative to their start positions
           for (const [id, startPos] of dragStartPositions.current) {
             const newX = snapToGrid(startPos.x + dx, GRID_SIZE)
             const newY = snapToGrid(startPos.y + dy, GRID_SIZE)
-            moveComponent(id, newX, newY)
+            moveComponent(id, newX, newY, initialWireState.current)
           }
         }
         setDrag({ currentX: world.x, currentY: world.y })

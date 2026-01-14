@@ -24,10 +24,16 @@ src/
 
 ### Circuit Model
 - **Components**: NAND/NOR gates and custom components placed on canvas
-- **Wires**: Connect component pins or board pins
+- **Wires**: Connect component pins or board pins (support custom waypoints for path editing)
 - **Input Board**: Draggable board with toggle switches (left side)
 - **Output Board**: Draggable board showing computed values (right side)
 - **Custom Components**: User-created reusable components saved to localStorage
+
+### Wire Path Editing
+- Select a wire to see segment handles at midpoints
+- Drag handles to create custom L-shaped paths
+- Dragging components recalculates connected wire L-shapes automatically
+- See `canvas/wirePathfinding.ts` for routing logic
 
 ### Coordinate Systems
 - **World coordinates**: Logical positions (circuit.components[].x/y)

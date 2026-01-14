@@ -47,13 +47,14 @@ ui: {
 
 ### Circuit
 - `addComponent(type, x, y)` - add gate or custom component
-- `moveComponent(id, x, y)` - reposition gate (adjusts connected wire waypoints proportionally)
+- `moveComponent(id, x, y, initialWireState?)` - reposition gate (recalculates L-shape wire waypoints)
 - `addWire(source, target)` - connect pins (auto-replaces existing connection to target)
 - `updateWireWaypoints(id, waypoints)` - set custom waypoints for wire path editing
 - `addInput()` / `removeInput(id)` - manage input board (minimum 1 pin always kept)
 - `addOutput()` / `removeOutput(id)` - manage output board (minimum 1 pin always kept)
+- `toggleInput(id)` - toggle input pin value on/off
 - `renameInput(id, label)` / `renameOutput(id, label)` - rename board pins
-- `moveInputBoard(x, y)` / `moveOutputBoard(x, y)` - reposition boards (adjust connected wire waypoints proportionally)
+- `moveInputBoard(x, y, initialWireState?)` / `moveOutputBoard(x, y, initialWireState?)` - reposition boards
 
 Initial circuit starts with 1 default input and 1 default output. Boards are positioned at ±360 (on major grid lines).
 
@@ -65,7 +66,8 @@ Initial circuit starts with 1 default input and 1 default output. Boards are pos
 
 ### UI
 - `pan(dx, dy)` / `zoom(factor, cx, cy)` - viewport control
-- `selectComponent(id, additive)` - selection
+- `selectComponent(id, additive)` / `selectWire(id, additive)` - selection
+- `clearSelection()` / `selectAll()` / `deleteSelected()` - bulk selection operations
 - `setDrag(state)` / `resetDrag()` - drag tracking
 - `startWiring(pin)` / `completeWiring(pin)` / `cancelWiring()` - wire creation
 - `setHoveredPin(componentId, pinIndex)` - component pin hover
@@ -85,9 +87,28 @@ Moving components or boards invalidates affected wire paths:
 - `moveInputBoard()` → `clearPathsForInputBoard()`
 - `moveOutputBoard()` → `clearPathsForOutputBoard()`
 
+## Wire L-Shape Recalculation
+When dragging components/boards, connected wires maintain their L-shape using `InitialWireState`:
+```typescript
+interface InitialWireState {
+  wireId: WireId
+  bothEndsMoving?: boolean      // True if both components selected (translation mode)
+  originalWaypoints?: Point[]   // For translation mode
+  xRatio: number                // Bend X as proportion from moving end to anchor
+  anchorX, anchorY: number      // Fixed reference point
+  isSourceEnd: boolean          // Which end is moving
+  remainingWaypoints: Point[]   // Waypoints beyond the L-shape (stay fixed)
+}
+```
+- When only one end moves: recalculates first 2 bends as L-shape, preserves rest
+- When both ends move: translates all waypoints by same displacement
+
 ## ID Generation
 Uses module-level counters cast to branded types:
 ```typescript
 let nextComponentId = 1
+let nextWireId = 1
+let nextInputId = 2   // Starts at 2 (initial circuit uses ID 1)
+let nextOutputId = 2  // Starts at 2 (initial circuit uses ID 1)
 const id = nextComponentId++ as ComponentId
 ```
