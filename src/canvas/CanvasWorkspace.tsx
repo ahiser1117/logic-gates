@@ -12,6 +12,7 @@ import './CanvasWorkspace.css'
 const GRID_SIZE = 20
 const PIN_START_Y = 40
 const PIN_SPACING = 40
+const WAYPOINT_HIT_RADIUS = 12 // World units for detecting clicks on waypoints
 
 /**
  * Simplify a path by removing collinear points and duplicate points.
@@ -116,6 +117,9 @@ export function CanvasWorkspace() {
   const startWiring = useStore((s) => s.startWiring)
   const completeWiring = useStore((s) => s.completeWiring)
   const cancelWiring = useStore((s) => s.cancelWiring)
+  const addWiringWaypoint = useStore((s) => s.addWiringWaypoint)
+  const removeWiringWaypoint = useStore((s) => s.removeWiringWaypoint)
+  const wiringWaypoints = useStore((s) => s.ui.wiring.waypoints)
   const setHoveredPin = useStore((s) => s.setHoveredPin)
   const setHoveredBoardPin = useStore((s) => s.setHoveredBoardPin)
   const addInput = useStore((s) => s.addInput)
@@ -832,7 +836,8 @@ export function CanvasWorkspace() {
     (e: React.MouseEvent) => {
       const { x, y } = getScreenCoords(e)
 
-      if (ui.wiring.active) {
+      // Only handle wiring on left-click (button 0), not right-click (button 2)
+      if (ui.wiring.active && e.button === 0) {
         const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
         if (hit.type === 'pin') {
           if (hit.pinType === 'input-board') {
@@ -962,10 +967,14 @@ export function CanvasWorkspace() {
         }
       }
 
-      dragStartPositions.current.clear()
-      boardDragStart.current = null
-      wireHandleDragStart.current = null
-      resetDrag()
+      // Only reset drag state on left-click or when not wiring
+      // Right-click during wiring should preserve preview coordinates
+      if (e.button === 0 || !ui.wiring.active) {
+        dragStartPositions.current.clear()
+        boardDragStart.current = null
+        wireHandleDragStart.current = null
+        resetDrag()
+      }
     },
     [getScreenCoords, circuit, customComponents, ui.viewport, ui.drag, ui.wiring.active, ui.selection.wires, completeWiring, cancelWiring, resetDrag, selectComponent, updateWireWaypoints]
   )
@@ -1036,6 +1045,40 @@ export function CanvasWorkspace() {
     setLabelEdit(null)
   }, [])
 
+  // Handle context menu (right-click) for adding/removing waypoints during wire creation
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      if (!ui.wiring.active) return
+
+      const { x, y } = getScreenCoords(e)
+      const world = screenToWorld(x, y, ui.viewport)
+
+      // Update drag coordinates so the preview uses the correct end position
+      setDrag({ currentX: x, currentY: y })
+
+      // Check if click is near an existing waypoint
+      for (let i = 0; i < wiringWaypoints.length; i++) {
+        const wp = wiringWaypoints[i]
+        if (!wp) continue
+        const dx = world.x - wp.x
+        const dy = world.y - wp.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist <= WAYPOINT_HIT_RADIUS) {
+          // Remove this waypoint
+          removeWiringWaypoint(i)
+          return
+        }
+      }
+
+      // No waypoint hit - add new waypoint (snapped to grid)
+      const snappedX = snapToGrid(world.x, GRID_SIZE)
+      const snappedY = snapToGrid(world.y, GRID_SIZE)
+      addWiringWaypoint({ x: snappedX, y: snappedY })
+    },
+    [ui.wiring.active, ui.viewport, getScreenCoords, wiringWaypoints, addWiringWaypoint, removeWiringWaypoint, setDrag]
+  )
+
   // Handle drop from palette
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -1099,7 +1142,7 @@ export function CanvasWorkspace() {
         onMouseLeave={handleMouseUp}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
-        onContextMenu={(e) => e.preventDefault()}
+        onContextMenu={handleContextMenu}
       />
       {labelEdit && (() => {
         const screen = worldToScreen(labelEdit.worldX, labelEdit.worldY, ui.viewport)

@@ -143,6 +143,57 @@ export function computePreviewPath(
   return simplifyPath([start, startExit, ...lShapePath.slice(1)])
 }
 
+/**
+ * Compute a preview path that includes user-placed waypoints.
+ * Creates L-shaped segments (2 bends) between consecutive points, passing through each waypoint.
+ */
+export function computePreviewPathWithWaypoints(
+  start: Point,
+  waypoints: Point[],
+  end: Point,
+  isSourcePin: boolean = true
+): Point[] {
+  // Calculate exit point from start pin
+  const startExit = isSourcePin
+    ? { x: start.x + PIN_EXIT_DISTANCE, y: start.y }
+    : { x: start.x - PIN_EXIT_DISTANCE, y: start.y }
+
+  // If no waypoints, use simple L-shape to end
+  if (waypoints.length === 0) {
+    const lShapePath = createLShapePath(startExit, end)
+    return simplifyPath([start, startExit, ...lShapePath.slice(1)])
+  }
+
+  // Build path through all waypoints with L-shapes (2 bends each)
+  const path: Point[] = [start, startExit]
+  const firstWaypoint = waypoints[0]!
+
+  // L-shape from exit to first waypoint (2 bends)
+  const toFirst = createLShapePath(startExit, firstWaypoint)
+  // Add the two bend points (skip start which is already in path)
+  path.push(toFirst[1]!) // First bend
+  path.push(toFirst[2]!) // Second bend
+  path.push(firstWaypoint) // The waypoint itself
+
+  // L-shapes between consecutive waypoints
+  for (let i = 1; i < waypoints.length; i++) {
+    const prevWp = waypoints[i - 1]!
+    const currWp = waypoints[i]!
+    const segment = createLShapePath(prevWp, currWp)
+    // Add the two bend points (skip start which is the previous waypoint)
+    path.push(segment[1]!) // First bend
+    path.push(segment[2]!) // Second bend
+    path.push(currWp) // The waypoint itself
+  }
+
+  // L-shape from last waypoint to end
+  const lastWaypoint = waypoints[waypoints.length - 1]!
+  const toEnd = createLShapePath(lastWaypoint, end)
+  path.push(...toEnd.slice(1))
+
+  return path
+}
+
 function createLShapePath(start: Point, end: Point): Point[] {
   // Snap midX to grid for clean paths
   const midX = Math.round((start.x + end.x) / 2 / GRID_STEP) * GRID_STEP
@@ -233,4 +284,4 @@ function simplifyPath(path: Point[]): Point[] {
 }
 
 // Export utilities for use in renderer and interactions
-export { getWireEndpointWorld, getExitPoint, getEntryPoint, PIN_EXIT_DISTANCE, GRID_STEP }
+export { getWireEndpointWorld, getExitPoint, getEntryPoint, simplifyPath, PIN_EXIT_DISTANCE, GRID_STEP }

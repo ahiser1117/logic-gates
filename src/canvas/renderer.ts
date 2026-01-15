@@ -4,7 +4,11 @@ import type { SimulationResult } from '../hooks/useSimulation'
 import { drawGrid, worldToScreen } from './grid'
 import { isPrimitiveGate } from '../types'
 import { getComponentDefinition } from '../simulation'
-import { computeWirePath, computePreviewPath, type Point } from './wirePathfinding'
+import {
+  computeWirePath,
+  computePreviewPathWithWaypoints,
+  type Point,
+} from './wirePathfinding'
 
 // Board layout constants (must match hitTest)
 const BOARD_WIDTH = 100
@@ -389,8 +393,8 @@ function drawWiringPreview(
     y: (ui.drag.currentY - ui.viewport.panY) / ui.viewport.zoom,
   }
 
-  // Compute path using pathfinding
-  const path = computePreviewPath(startWorld, endWorld, circuit, customComponents, isSourcePin)
+  // Compute path using pathfinding with waypoints
+  const path = computePreviewPathWithWaypoints(startWorld, ui.wiring.waypoints, endWorld, isSourcePin)
 
   if (path.length < 2) return
 
@@ -430,6 +434,18 @@ function drawWiringPreview(
   ctx.stroke()
 
   ctx.setLineDash([])
+
+  // Draw waypoint markers
+  for (const wp of ui.wiring.waypoints) {
+    const screen = worldToScreen(wp.x, wp.y, ui.viewport)
+    ctx.beginPath()
+    ctx.arc(screen.x, screen.y, 4 * zoom, 0, Math.PI * 2)
+    ctx.fillStyle = '#60a5fa'
+    ctx.fill()
+    ctx.strokeStyle = '#1e3a5f'
+    ctx.lineWidth = 1.5 * zoom
+    ctx.stroke()
+  }
 }
 
 function drawInputBoard(ctx: CanvasRenderingContext2D, circuit: Circuit, ui: UIState, hoveredButton: UIState['hoveredButton'], pinsOnly: boolean = false) {

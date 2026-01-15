@@ -7,6 +7,8 @@ import {
   clearPathsForOutputBoard,
   clearWirePath,
   getWireEndpointWorld,
+  computePreviewPathWithWaypoints,
+  simplifyPath,
   GRID_STEP,
 } from '../canvas/wirePathfinding'
 
@@ -20,6 +22,7 @@ enableMapSet()
 import type {
   Circuit,
   ComponentId,
+  Wire,
   WireId,
   WireSource,
   WireTarget,
@@ -75,7 +78,7 @@ interface AppState {
   moveComponent: (id: ComponentId, x: number, y: number, initialWireState?: InitialWireState[]) => void
   moveSelectedComponents: (dx: number, dy: number) => void
 
-  addWire: (source: WireSource, target: WireTarget) => WireId | null
+  addWire: (source: WireSource, target: WireTarget, waypoints?: Point[]) => WireId | null
   removeWire: (id: WireId) => void
   updateWireWaypoints: (id: WireId, waypoints: Point[] | undefined) => void
 
@@ -114,6 +117,8 @@ interface AppState {
   startWiring: (pin: PinRef) => void
   completeWiring: (pin: PinRef) => void
   cancelWiring: () => void
+  addWiringWaypoint: (point: Point) => void
+  removeWiringWaypoint: (index: number) => void
 
   setHoveredPin: (componentId: ComponentId | null, pinIndex: number | null) => void
   setHoveredBoardPin: (inputId: InputId | null, outputId: OutputId | null) => void
@@ -244,7 +249,7 @@ export const useStore = create<AppState>()(
       })
     },
 
-    addWire: (source, target) => {
+    addWire: (source, target, waypoints) => {
       const id = nextWireId++ as WireId
       set((state) => {
         // Remove any existing wire to the same target (input pins can only have one connection)
@@ -259,7 +264,11 @@ export const useStore = create<AppState>()(
             return !(w.target.type === 'output' && w.target.outputId === target.outputId)
           }
         })
-        state.circuit.wires.push({ id, source, target })
+        const wire: Wire = { id, source, target }
+        if (waypoints && waypoints.length > 0) {
+          wire.waypoints = waypoints
+        }
+        state.circuit.wires.push(wire)
       })
       return id
     },
@@ -681,6 +690,7 @@ export const useStore = create<AppState>()(
       set((state) => {
         state.ui.wiring.active = true
         state.ui.wiring.startPin = pin
+        state.ui.wiring.waypoints = []
       })
     },
 
@@ -724,11 +734,47 @@ export const useStore = create<AppState>()(
         return
       }
 
+      // Get user-specified waypoints
+      const userWaypoints = state.ui.wiring.waypoints
+
+      // Helper to compute final waypoints including L-shape bends
+      const computeFinalWaypoints = (
+        source: WireSource,
+        target: WireTarget,
+        waypoints: Point[]
+      ): Point[] | undefined => {
+        // If no user waypoints, use default L-shape routing
+        if (waypoints.length === 0) {
+          return undefined
+        }
+
+        const startPos = getWireEndpointWorld(source, state.circuit, state.customComponents)
+        const endPos = getWireEndpointWorld(target, state.circuit, state.customComponents)
+
+        if (!startPos || !endPos) {
+          return waypoints // Fallback to user waypoints
+        }
+
+        // Compute full path with L-shapes (isSourcePin=true since we're going source->target)
+        const fullPath = computePreviewPathWithWaypoints(startPos, waypoints, endPos, true)
+
+        // Simplify the path to remove collinear points, then extract waypoints
+        const simplified = simplifyPath(fullPath)
+
+        // Extract waypoints (everything except first and last which are pin positions)
+        if (simplified.length > 2) {
+          return simplified.slice(1, -1)
+        }
+
+        return undefined
+      }
+
       // Try startPin as source, pin as target
       const source1 = canBeSource(startPin)
       const target1 = canBeTarget(pin)
       if (source1 && target1) {
-        const wireId = state.addWire(source1, target1)
+        const finalWaypoints = computeFinalWaypoints(source1, target1, userWaypoints)
+        const wireId = state.addWire(source1, target1, finalWaypoints)
         if (wireId) {
           state.cancelWiring()
           return
@@ -739,7 +785,10 @@ export const useStore = create<AppState>()(
       const source2 = canBeSource(pin)
       const target2 = canBeTarget(startPin)
       if (source2 && target2) {
-        state.addWire(source2, target2)
+        // When reversing direction, reverse the user waypoints first
+        const reversedUserWaypoints = [...userWaypoints].reverse()
+        const finalWaypoints = computeFinalWaypoints(source2, target2, reversedUserWaypoints)
+        state.addWire(source2, target2, finalWaypoints)
       }
 
       state.cancelWiring()
@@ -749,6 +798,23 @@ export const useStore = create<AppState>()(
       set((state) => {
         state.ui.wiring.active = false
         state.ui.wiring.startPin = null
+        state.ui.wiring.waypoints = []
+      })
+    },
+
+    addWiringWaypoint: (point) => {
+      set((state) => {
+        if (state.ui.wiring.active) {
+          state.ui.wiring.waypoints.push(point)
+        }
+      })
+    },
+
+    removeWiringWaypoint: (index) => {
+      set((state) => {
+        if (state.ui.wiring.active && index >= 0 && index < state.ui.wiring.waypoints.length) {
+          state.ui.wiring.waypoints.splice(index, 1)
+        }
       })
     },
 

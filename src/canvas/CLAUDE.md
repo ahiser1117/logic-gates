@@ -13,6 +13,7 @@ Main React component wrapping the canvas element. Handles:
 - Marquee selection (drag on empty space to select multiple components)
 - Double-click on board pin labels to edit them
 - Label edit textbox scales with zoom and tracks world position
+- Right-click during wire creation to add/remove waypoints (context menu)
 
 Key refs:
 - `dragStartPositions` - tracks component positions during drag
@@ -44,7 +45,8 @@ Wire routing with optional custom waypoints.
 
 Key functions:
 - `computeWirePath(wire, circuit, customComponents)` - returns path points for a wire (uses custom waypoints if present, otherwise auto L-shape)
-- `computePreviewPath(start, end, circuit, customComponents, isSourcePin)` - for live preview
+- `computePreviewPath(start, end, circuit, customComponents, isSourcePin)` - for live preview without waypoints
+- `computePreviewPathWithWaypoints(start, waypoints, end, isSourcePin)` - for live preview with user-placed waypoints (L-shapes between each)
 - `getWireEndpointWorld(endpoint, circuit, customComponents)` - get world position of wire source/target
 - `clearPathCache()` / `clearWirePath(wireId)` - cache management
 - `clearPathsForComponent(componentId, circuit)` - invalidate on component move

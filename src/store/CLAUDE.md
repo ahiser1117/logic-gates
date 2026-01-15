@@ -36,7 +36,7 @@ ui: {
   viewport: { panX, panY, zoom }
   selection: { components: Set, wires: Set }
   drag: { type, startX, startY, currentX, currentY }
-  wiring: { active, startPin }
+  wiring: { active, startPin, waypoints }
   hoveredComponentId, hoveredPinIndex
   hoveredInputId, hoveredOutputId  // Board pin hover state
   hoveredButton                     // Board button hover state
@@ -48,7 +48,7 @@ ui: {
 ### Circuit
 - `addComponent(type, x, y)` - add gate or custom component
 - `moveComponent(id, x, y, initialWireState?)` - reposition gate (recalculates L-shape wire waypoints)
-- `addWire(source, target)` - connect pins (auto-replaces existing connection to target)
+- `addWire(source, target, waypoints?)` - connect pins (auto-replaces existing connection to target)
 - `updateWireWaypoints(id, waypoints)` - set custom waypoints for wire path editing
 - `addInput()` / `removeInput(id)` - manage input board (minimum 1 pin always kept)
 - `addOutput()` / `removeOutput(id)` - manage output board (minimum 1 pin always kept)
@@ -70,6 +70,7 @@ Initial circuit starts with 1 default input and 1 default output. Boards are pos
 - `clearSelection()` / `selectAll()` / `deleteSelected()` - bulk selection operations
 - `setDrag(state)` / `resetDrag()` - drag tracking
 - `startWiring(pin)` / `completeWiring(pin)` / `cancelWiring()` - wire creation
+- `addWiringWaypoint(point)` / `removeWiringWaypoint(index)` - manage waypoints during wire creation
 - `setHoveredPin(componentId, pinIndex)` - component pin hover
 - `setHoveredBoardPin(inputId, outputId)` - board pin hover
 - `setHoveredButton(button)` - board button hover (add/remove/toggle)

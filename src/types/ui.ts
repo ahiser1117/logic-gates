@@ -1,4 +1,4 @@
-import type { ComponentId, WireId, InputId, OutputId, GateType } from './circuit'
+import type { ComponentId, WireId, InputId, OutputId, GateType, Point } from './circuit'
 
 // === Viewport State ===
 export interface Viewport {
@@ -23,6 +23,7 @@ export type PinRef =
 export interface WiringState {
   active: boolean
   startPin: PinRef | null
+  waypoints: Point[]
 }
 
 // === Drag State ===
@@ -79,6 +80,7 @@ export const initialUIState: UIState = {
   wiring: {
     active: false,
     startPin: null,
+    waypoints: [],
   },
   drag: {
     type: 'none',
