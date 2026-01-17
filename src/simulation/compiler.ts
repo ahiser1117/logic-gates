@@ -24,10 +24,15 @@ export function getComponentDefinition(
   return null
 }
 
-export function compile(
+interface CompileInternalResult {
+  netlist: Netlist
+  pinToNet: Map<string, NetId>
+}
+
+function compileInternal(
   circuit: Circuit,
   customComponents?: Map<CustomComponentId, CustomComponentDefinition>
-): Netlist {
+): CompileInternalResult {
   const errors: ValidationError[] = []
   const nets: Net[] = []
   const netMap = new Map<string, NetId>() // pinKey -> netId
@@ -251,10 +256,27 @@ export function compile(
   )
 
   return {
-    nets,
-    components: compiledComponents,
-    topoOrder: order,
-    valid: !hasHardErrors,
-    errors,
+    netlist: {
+      nets,
+      components: compiledComponents,
+      topoOrder: order,
+      valid: !hasHardErrors,
+      errors,
+    },
+    pinToNet: netMap,
   }
+}
+
+export function compile(
+  circuit: Circuit,
+  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
+): Netlist {
+  return compileInternal(circuit, customComponents).netlist
+}
+
+export function compileWithPinMap(
+  circuit: Circuit,
+  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
+): CompileInternalResult {
+  return compileInternal(circuit, customComponents)
 }
