@@ -23,11 +23,12 @@ src/
 ## Key Concepts
 
 ### Circuit Model
-- **Components**: NAND/NOR gates and custom components placed on canvas
+- **Components**: NAND/NOR gates, Split/Merge bus primitive, and custom components placed on canvas
 - **Wires**: Connect component pins or board pins (support custom waypoints for path editing)
-- **Input Board**: Draggable board with toggle switches (left side)
-- **Output Board**: Draggable board showing computed values (right side)
+- **Input Board**: Draggable board with toggle switches (left side), supports multi-bit values
+- **Output Board**: Draggable board showing computed values (right side), supports multi-bit values
 - **Custom Components**: User-created reusable components saved to localStorage
+- **Split/Merge**: Right-click to set partitions and toggle between split or merge mode
 
 ### Wire Path Editing
 - Select a wire to see segment handles at midpoints
@@ -50,7 +51,8 @@ src/
 ### Adding a new primitive gate type
 1. Add type to `PrimitiveGateType` union in `types/circuit.ts`
 2. Add definition to `GATE_DEFINITIONS` with width, height, pins
-3. Gate will auto-appear in Palette
+3. If the primitive has per-instance pins (e.g., Split/Merge), update `getComponentDefinition` to use instance config
+4. Gate will auto-appear in Palette
 
 ### Creating custom components
 1. Build circuit with input/output board pins connected

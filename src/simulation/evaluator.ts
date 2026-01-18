@@ -14,6 +14,7 @@ import { compile } from './compiler'
 const GATE_FUNCTIONS: Record<PrimitiveGateType, (inputs: boolean[]) => boolean> = {
   NAND: (inputs) => !(inputs[0] && inputs[1]),
   NOR: (inputs) => !(inputs[0] || inputs[1]),
+  SPLIT_MERGE: (inputs) => inputs[0] ?? false,
 }
 
 // Evaluate a custom component by recursively compiling and evaluating its internal circuit
@@ -125,15 +126,61 @@ export function evaluate(
     })
 
     if (isPrimitiveGate(comp.type)) {
-      // Primitive gate - use direct evaluation (single-bit only)
-      const outputVal = GATE_FUNCTIONS[comp.type](inputVals)
+      if (comp.type === 'SPLIT_MERGE') {
+        const config = comp.splitMergeConfig
+        if (!config) {
+          continue
+        }
 
-      // Set output net value (primitive gates have exactly one output)
-      const outputNetId = comp.outputNetIds[0]
-      if (outputNetId !== undefined) {
-        const outputNet = netlist.nets[outputNetId]
-        if (outputNet) {
-          outputNet.value = outputVal
+        const totalWidth = config.partitions.reduce((sum, size) => sum + size, 0)
+
+        if (config.mode === 'split') {
+          const busNetId = comp.inputNetIds[0]
+          const busNet = busNetId !== undefined ? netlist.nets[busNetId] : undefined
+          const busValue = busNet?.value ?? new Array(totalWidth).fill(false)
+          const busArray = Array.isArray(busValue)
+            ? busValue
+            : [busValue]
+
+          let offset = 0
+          comp.outputNetIds.forEach((netId, index) => {
+            const net = netlist.nets[netId]
+            if (!net) return
+            const width = config.partitions[index] ?? 1
+            const slice = busArray.slice(offset, offset + width)
+            const outputValue = width === 1 ? (slice[0] ?? false) : slice
+            net.value = outputValue
+            offset += width
+          })
+        } else {
+          const merged: boolean[] = []
+          config.partitions.forEach((width, index) => {
+            const netId = comp.inputNetIds[index]
+            const net = netId !== undefined ? netlist.nets[netId] : undefined
+            const value = net?.value ?? new Array(width).fill(false)
+            const bits = Array.isArray(value) ? value : [value]
+            for (let i = 0; i < width; i++) {
+              merged.push(bits[i] ?? false)
+            }
+          })
+
+          const outputNetId = comp.outputNetIds[0]
+          const outputNet = outputNetId !== undefined ? netlist.nets[outputNetId] : undefined
+          if (outputNet) {
+            outputNet.value = totalWidth === 1 ? (merged[0] ?? false) : merged
+          }
+        }
+      } else {
+        // Primitive gate - use direct evaluation (single-bit only)
+        const outputVal = GATE_FUNCTIONS[comp.type](inputVals)
+
+        // Set output net value (primitive gates have exactly one output)
+        const outputNetId = comp.outputNetIds[0]
+        if (outputNetId !== undefined) {
+          const outputNet = netlist.nets[outputNetId]
+          if (outputNet) {
+            outputNet.value = outputVal
+          }
         }
       }
     } else {

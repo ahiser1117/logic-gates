@@ -16,7 +16,7 @@ type CustomComponentId = string & { readonly __brand: 'CustomComponentId' }
 
 **Component Types**:
 ```typescript
-type PrimitiveGateType = 'NAND' | 'NOR'
+type PrimitiveGateType = 'NAND' | 'NOR' | 'SPLIT_MERGE'
 type ComponentType = PrimitiveGateType | CustomComponentId
 ```
 Use `isPrimitiveGate(type)` to check if a component type is primitive.
@@ -43,7 +43,7 @@ interface CustomComponentDefinition {
 ```
 
 **Key Types**:
-- `Component` - gate instance with id, type, x, y
+- `Component` - gate instance with id, type, x, y, optional Split/Merge config
 - `Wire` - connection with source, target, and optional `waypoints?: Point[]` for custom paths
 - `Circuit` - full state including boards
 - `BoardPosition` - x, y for draggable boards
@@ -91,3 +91,4 @@ import type { Circuit, ComponentId } from '../types'
 1. Add to `PrimitiveGateType` union: `'NAND' | 'NOR' | 'NEW'`
 2. Add to `GATE_DEFINITIONS` with dimensions and pins
 3. Pin directions: `'input'` (left) or `'output'` (right)
+4. For Split/Merge-like primitives, add a per-instance config type and update pin layout helpers

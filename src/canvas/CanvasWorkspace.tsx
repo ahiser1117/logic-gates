@@ -6,6 +6,7 @@ import { hitTest } from './hitTest'
 import { screenToWorld, worldToScreen, snapToGrid } from './grid'
 import { getComponentDefinition } from '../simulation'
 import type { ComponentType, ComponentId, InputId, OutputId, WireId, Point } from '../types'
+import { SplitMergeContextMenu } from '../components/SplitMergeContextMenu'
 import { computeWirePath, getWireEndpointWorld, GRID_STEP } from './wirePathfinding'
 import { BitWidthContextMenu } from '../components/BitWidthContextMenu'
 import { getInputBoardWidth, PIN_START_Y, PIN_SPACING } from './boardLayout'
@@ -974,7 +975,7 @@ export function CanvasWorkspace() {
 
         // Select all components that intersect with the marquee
         for (const component of circuit.components) {
-          const def = getComponentDefinition(component.type, customComponents)
+          const def = getComponentDefinition(component.type, customComponents, component)
           if (!def) continue
 
           const halfW = def.width / 2
@@ -1183,17 +1184,31 @@ export function CanvasWorkspace() {
       // If not wiring, check if right-clicking on an input pin to show bit width menu
       if (!ui.wiring.active) {
         const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
-        if (hit.type === 'pin' && hit.pinType === 'input-board' && hit.inputId !== undefined) {
-          showContextMenu({
-            type: 'input-bitwidth',
-            inputId: hit.inputId,
-            screenX: e.clientX,
-            screenY: e.clientY,
-          })
-          return
-        }
-        return
-      }
+         if (hit.type === 'pin' && hit.pinType === 'input-board' && hit.inputId !== undefined) {
+           showContextMenu({
+             type: 'input-bitwidth',
+             inputId: hit.inputId,
+             screenX: e.clientX,
+             screenY: e.clientY,
+           })
+           return
+         }
+
+         if (hit.type === 'component' && hit.componentId !== undefined) {
+           const component = circuit.components.find((c) => c.id === hit.componentId)
+           if (component?.type === 'SPLIT_MERGE') {
+             showContextMenu({
+               type: 'split-merge-config',
+               componentId: hit.componentId,
+               screenX: e.clientX,
+               screenY: e.clientY,
+             })
+             return
+           }
+         }
+         return
+       }
+
 
       const world = screenToWorld(x, y, ui.viewport)
 
@@ -1343,6 +1358,22 @@ export function CanvasWorkspace() {
             screenX={contextMenu.screenX}
             screenY={contextMenu.screenY}
             initialBitWidth={input.bitWidth}
+            onClose={hideContextMenu}
+          />
+        )
+      })()}
+      {contextMenu && contextMenu.type === 'split-merge-config' && (() => {
+        const component = circuit.components.find((c) => c.id === contextMenu.componentId)
+        if (!component || component.type !== 'SPLIT_MERGE') return null
+        const partitions = component.splitMerge?.partitions ?? [1, 1]
+        const initialValue = partitions.join(',')
+        return (
+          <SplitMergeContextMenu
+            componentId={component.id}
+            screenX={contextMenu.screenX}
+            screenY={contextMenu.screenY}
+            initialValue={initialValue}
+            mode={component.splitMerge?.mode ?? 'split'}
             onClose={hideContextMenu}
           />
         )

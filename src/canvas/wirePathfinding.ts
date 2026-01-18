@@ -216,7 +216,7 @@ function getWireEndpointWorld(
     const component = circuit.components.find((c) => c.id === endpoint.componentId)
     if (!component) return null
 
-    const def = getComponentDefinition(component.type, customComponents)
+    const def = getComponentDefinition(component.type, customComponents, component)
     if (!def) return null
 
     const pin = def.pins.find((p) => p.index === endpoint.pinIndex)

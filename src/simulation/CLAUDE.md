@@ -16,6 +16,7 @@ Compiles circuits to netlists and evaluates boolean logic.
    - NAND: `!(A && B)`
    - NOR: `!(A || B)`
    - Custom components: evaluated recursively (hierarchical, not flattened)
+- Split/Merge primitive: partitions a bus or merges partitions using per-instance config
 
 ## Files
 
@@ -24,7 +25,7 @@ Compiles circuits to netlists and evaluates boolean logic.
 
 Creates nets from wires, maps component pins to net indices, runs topological sort, validates circuit.
 
-Helper: `getComponentDefinition(type, customComponents?)` - returns width, height, pins for any component type (primitive or custom).
+Helper: `getComponentDefinition(type, customComponents?, component?)` - returns width, height, pins for any component type (primitive, custom, or per-instance Split/Merge).
 
 ### topological.ts
 `topologicalSort(components, nets)` → `TopoResult`
@@ -58,6 +59,7 @@ interface CompiledComponent {
   type: ComponentType
   inputNetIds: NetId[]
   outputNetIds: NetId[]  // Array to support multiple outputs
+  splitMergeConfig?: SplitMergeConfig
 }
 ```
 

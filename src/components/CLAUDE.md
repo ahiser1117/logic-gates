@@ -16,7 +16,7 @@ Main app layout with sidebar and canvas area.
 
 ### Palette.tsx
 Sidebar with draggable gate components.
-- Lists primitive gates from `GATE_DEFINITIONS`
+- Lists primitive gates from `GATE_DEFINITIONS` (including Split/Merge)
 - Lists custom components from store
 - Drag to canvas to add new gates/components
 - Sets `dataTransfer.setData('componentType', type)` on drag
@@ -28,6 +28,11 @@ Modal dialog for creating custom components.
 - Shows input/output count from current circuit
 - Displays validation errors if circuit is invalid
 - Validates: all board pins connected, all component pins used
+
+### SplitMergeContextMenu.tsx
+Context menu for Split/Merge primitives.
+- Right-click Split/Merge to set partition sizes (comma list)
+- Toggle button switches between Split and Merge mode
 
 ### InputBoard.tsx / OutputBoard.tsx
 **NOT USED** - Legacy React components. Input/output boards are now rendered directly on canvas in `renderer.ts` and are draggable.

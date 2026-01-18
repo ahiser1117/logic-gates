@@ -125,16 +125,17 @@ export function renderFrame(
     if (source.type === 'input') {
       const input = circuit.inputs.find((i) => i.id === source.inputId)
       bitWidth = input?.bitWidth ?? 1
-    } else if (source.type === 'component') {
-      const comp = circuit.components.find((c) => c.id === source.componentId)
-      if (comp) {
-        const def = getComponentDefinition(comp.type, customComponents)
-        if (def) {
-          const pin = def.pins.find((p) => p.index === source.pinIndex)
-          bitWidth = pin?.bitWidth ?? 1
+      } else if (source.type === 'component') {
+        const comp = circuit.components.find((c) => c.id === source.componentId)
+        if (comp) {
+          const def = getComponentDefinition(comp.type, customComponents, comp)
+          if (def) {
+            const pin = def.pins.find((p) => p.index === source.pinIndex)
+            bitWidth = pin?.bitWidth ?? 1
+          }
         }
       }
-    }
+
     drawWire(ctx, wire, circuit, ui, signalValue, customComponents, bitWidth)
   }
 
@@ -170,7 +171,7 @@ function drawComponent(
   simulation: SimulationResult,
   customComponents?: Map<CustomComponentId, CustomComponentDefinition>
 ) {
-  const def = getComponentDefinition(component.type, customComponents)
+  const def = getComponentDefinition(component.type, customComponents, component)
   if (!def) return
 
   const isCustom = !isPrimitiveGate(component.type)
@@ -181,7 +182,10 @@ function drawComponent(
   const h = def.height * scale
 
   // Draw body with different colors for custom components
-  if (isCustom) {
+  if (component.type === 'SPLIT_MERGE') {
+    ctx.fillStyle = selected ? '#1d4ed8' : '#1e40af'
+    ctx.strokeStyle = selected ? '#60a5fa' : '#93c5fd'
+  } else if (isCustom) {
     ctx.fillStyle = selected ? COLORS.customGateSelected : COLORS.customGate
     ctx.strokeStyle = selected ? COLORS.customGateSelectedBorder : COLORS.customGateBorder
   } else {
@@ -202,7 +206,9 @@ function drawComponent(
   ctx.textBaseline = 'middle'
 
   let label: string
-  if (isCustom) {
+  if (component.type === 'SPLIT_MERGE') {
+    label = component.splitMerge?.mode === 'merge' ? 'MERGE' : 'SPLIT'
+  } else if (isCustom) {
     const customDef = customComponents?.get(component.type as CustomComponentId)
     label = customDef?.name ?? '?'
   } else {
@@ -245,11 +251,15 @@ function drawComponent(
       ctx.stroke()
     }
 
+    if ((pin.bitWidth ?? 1) > 1) {
+      const badgeOffset = pin.direction === 'input' ? -6 : 6
+      drawBitWidthBadge(ctx, pinX + badgeOffset * scale, pinY - 8 * scale, pin.bitWidth ?? 1, scale)
+    }
+
     // Draw pin label tooltip for custom components on hover
-    if (isCustom && isHovered) {
-      // Custom components: show label tooltip on hover
+    if ((isCustom || component.type === 'SPLIT_MERGE') && isHovered) {
       ctx.fillStyle = '#1e293b'
-      ctx.strokeStyle = COLORS.customGateBorder
+      ctx.strokeStyle = component.type === 'SPLIT_MERGE' ? COLORS.gateBorder : COLORS.customGateBorder
       ctx.lineWidth = 1
 
       const labelText = pin.name
@@ -407,7 +417,8 @@ function drawWiringPreview(
   if (startPin.type === 'component') {
     const component = circuit.components.find((c) => c.id === startPin.componentId)
     if (component) {
-      const def = getComponentDefinition(component.type, customComponents)
+  const def = getComponentDefinition(component.type, customComponents, component)
+
       if (def) {
         const pin = def.pins.find((p) => p.index === startPin.pinIndex)
         if (pin) {

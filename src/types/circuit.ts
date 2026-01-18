@@ -11,7 +11,34 @@ export type InputId = number & { readonly __brand: 'InputId' }
 export type OutputId = number & { readonly __brand: 'OutputId' }
 
 // === Gate Types ===
-export type PrimitiveGateType = 'NAND' | 'NOR'
+export type PrimitiveGateType = 'NAND' | 'NOR' | 'SPLIT_MERGE'
+
+export type SplitMergeMode = 'split' | 'merge'
+
+export interface SplitMergeConfig {
+  mode: SplitMergeMode
+  partitions: number[]
+}
+
+const DEFAULT_SPLIT_MERGE_CONFIG: SplitMergeConfig = { mode: 'split', partitions: [1, 1] }
+
+export function createDefaultSplitMergeConfig(): SplitMergeConfig {
+  return structuredClone(DEFAULT_SPLIT_MERGE_CONFIG)
+}
+
+export function normalizeSplitMergeConfig(config?: SplitMergeConfig): SplitMergeConfig {
+  const mode: SplitMergeMode = config?.mode === 'merge' ? 'merge' : 'split'
+  const rawPartitions = config?.partitions ?? DEFAULT_SPLIT_MERGE_CONFIG.partitions
+  const partitions = rawPartitions
+    .map((size) => Math.max(1, Math.min(32, Math.floor(size))))
+    .filter((size) => Number.isFinite(size))
+
+  if (partitions.length === 0) {
+    return createDefaultSplitMergeConfig()
+  }
+
+  return { mode, partitions }
+}
 
 // Custom component ID (branded string type)
 export type CustomComponentId = string & { readonly __brand: 'CustomComponentId' }
@@ -52,6 +79,11 @@ export const GATE_DEFINITIONS: Record<GateType, { width: number; height: number;
       { index: 2, name: 'Y', direction: 'output', offsetX: 30, offsetY: 0 },
     ],
   },
+  SPLIT_MERGE: {
+    width: 80,
+    height: 80,
+    pins: [],
+  },
 }
 
 // === Component Instance ===
@@ -60,6 +92,7 @@ export interface Component {
   type: ComponentType
   x: number  // Grid position
   y: number
+  splitMerge?: SplitMergeConfig
 }
 
 // === Global Input (on input board) ===
@@ -135,7 +168,11 @@ export function createCustomComponentId(uuid: string): CustomComponentId {
 
 // === Type Guards ===
 export function isPrimitiveGate(type: ComponentType): type is PrimitiveGateType {
-  return type === 'NAND' || type === 'NOR'
+  return type === 'NAND' || type === 'NOR' || type === 'SPLIT_MERGE'
+}
+
+export function getSplitMergeConfig(component?: Component): SplitMergeConfig {
+  return normalizeSplitMergeConfig(component?.splitMerge)
 }
 
 // === Custom Component Definition ===

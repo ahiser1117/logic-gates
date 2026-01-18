@@ -1,4 +1,4 @@
-import type { ComponentId, InputId, OutputId, ComponentType } from '../types'
+import type { ComponentId, InputId, OutputId, ComponentType, SplitMergeConfig } from '../types'
 
 // === Net ID ===
 export type NetId = number & { readonly __brand: 'NetId' }
@@ -29,6 +29,7 @@ export interface CompiledComponent {
   type: ComponentType
   inputNetIds: NetId[]
   outputNetIds: NetId[]  // Array to support custom components with multiple outputs
+  splitMergeConfig?: SplitMergeConfig
 }
 
 // === Validation Error ===

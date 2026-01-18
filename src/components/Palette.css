@@ -54,6 +54,16 @@
   border-color: #60a5fa;
 }
 
+.gate-icon.gate-split_merge {
+  background: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.gate-icon.gate-split_merge:hover {
+  background: #2563eb;
+  border-color: #bfdbfe;
+}
+
 /* Custom component styling */
 .gate-icon.gate-custom {
   background: #4a1e5f;

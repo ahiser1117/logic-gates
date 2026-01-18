@@ -1,4 +1,6 @@
-import type { PinDefinition } from '../types'
+import type { PinDefinition, SplitMergeConfig } from '../types'
+
+const SPLIT_MERGE_PIN_SPACING = 24
 
 const MIN_WIDTH = 60
 const MAX_WIDTH = 120
@@ -8,6 +10,50 @@ export interface PinLayoutResult {
   width: number
   height: number
   pins: PinDefinition[]
+}
+
+function calculateSplitMergeHeight(partitionCount: number): number {
+  const totalPins = Math.max(2, partitionCount + 1)
+  return totalPins * SPLIT_MERGE_PIN_SPACING + 20
+}
+
+function calculateSplitMergeWidth(name: string): number {
+  const minWidth = Math.max(MIN_WIDTH, 80)
+  return Math.max(minWidth, computeWidth(name))
+}
+
+export function computeSplitMergePinLayout(config: SplitMergeConfig): PinLayoutResult {
+  const partitions = config.partitions.length
+  const height = calculateSplitMergeHeight(partitions)
+  const width = calculateSplitMergeWidth('SPLIT')
+
+  const availableHeight = height - 20
+  const secondarySpacing = partitions > 1 ? availableHeight / (partitions - 1) : 0
+  const secondaryStartY = -((partitions - 1) * secondarySpacing) / 2
+
+  const pins: PinDefinition[] = []
+
+  pins.push({
+    index: 0,
+    name: 'BUS',
+    direction: config.mode === 'merge' ? 'output' : 'input',
+    offsetX: config.mode === 'merge' ? width / 2 : -width / 2,
+    offsetY: 0,
+    bitWidth: config.partitions.reduce((sum, size) => sum + size, 0),
+  })
+
+  for (let i = 0; i < partitions; i++) {
+    pins.push({
+      index: i + 1,
+      name: `P${i}`,
+      direction: config.mode === 'merge' ? 'input' : 'output',
+      offsetX: config.mode === 'merge' ? -width / 2 : width / 2,
+      offsetY: secondaryStartY + i * secondarySpacing,
+      bitWidth: config.partitions[i],
+    })
+  }
+
+  return { width, height, pins }
 }
 
 function computeWidth(name: string): number {

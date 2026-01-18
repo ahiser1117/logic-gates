@@ -1,12 +1,25 @@
 import type { ComponentId, WireId, InputId, OutputId, GateType, Point } from './circuit'
 
 // === Context Menu State ===
-export interface ContextMenuState {
-  type: 'input-bitwidth' | 'multi-bit-input'
-  inputId: InputId
-  screenX: number
-  screenY: number
-}
+export type ContextMenuState =
+  | {
+      type: 'input-bitwidth'
+      inputId: InputId
+      screenX: number
+      screenY: number
+    }
+  | {
+      type: 'split-merge-config'
+      componentId: ComponentId
+      screenX: number
+      screenY: number
+    }
+  | {
+      type: 'multi-bit-input'
+      inputId: InputId
+      screenX: number
+      screenY: number
+    }
 
 // === Viewport State ===
 export interface Viewport {

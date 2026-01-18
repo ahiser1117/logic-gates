@@ -86,7 +86,7 @@ export function hitTest(
 
   // Check components - use distance-based approach for pin vs body
   for (const component of circuit.components) {
-    const def = getComponentDefinition(component.type, customComponents)
+    const def = getComponentDefinition(component.type, customComponents, component)
     if (!def) continue
 
     const halfW = def.width / 2

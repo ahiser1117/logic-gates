@@ -1,14 +1,31 @@
-import type { Circuit, Wire, PinDefinition, CustomComponentId, CustomComponentDefinition, ComponentType } from '../types'
-import { GATE_DEFINITIONS, isPrimitiveGate } from '../types'
+import type {
+  Circuit,
+  Wire,
+  PinDefinition,
+  CustomComponentId,
+  CustomComponentDefinition,
+  ComponentType,
+} from '../types'
+import { GATE_DEFINITIONS, isPrimitiveGate, normalizeSplitMergeConfig } from '../types'
 import type { Netlist, Net, NetId, CompiledComponent, ValidationError, NetDriver, NetReader } from './types'
 import { topologicalSort } from './topological'
+import { computeSplitMergePinLayout } from '../utils/pinLayout'
+
+function getSplitMergeDefinition(component: { splitMerge?: { mode: 'split' | 'merge'; partitions: number[] } }) {
+  const config = normalizeSplitMergeConfig(component.splitMerge)
+  return computeSplitMergePinLayout(config)
+}
 
 // Helper to get component definition for any component type
 export function getComponentDefinition(
   type: ComponentType,
-  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
+  customComponents?: Map<CustomComponentId, CustomComponentDefinition>,
+  component?: { splitMerge?: { mode: 'split' | 'merge'; partitions: number[] } } | null
 ): { width: number; height: number; pins: PinDefinition[] } | null {
   if (isPrimitiveGate(type)) {
+    if (type === 'SPLIT_MERGE' && component) {
+      return getSplitMergeDefinition(component)
+    }
     return GATE_DEFINITIONS[type]
   }
 
@@ -22,6 +39,17 @@ export function getComponentDefinition(
   }
 
   return null
+}
+
+function getComponentDefinitionForInstance(
+  type: ComponentType,
+  customComponents: Map<CustomComponentId, CustomComponentDefinition> | undefined,
+  component: { splitMerge?: { mode: 'split' | 'merge'; partitions: number[] } } | null
+) {
+  if (type === 'SPLIT_MERGE') {
+    return getComponentDefinition(type, customComponents, component)
+  }
+  return getComponentDefinition(type, customComponents)
 }
 
 export function compile(
@@ -69,7 +97,9 @@ export function compile(
     if (source.type === 'component') {
       const component = circuit.components.find((c) => c.id === source.componentId)
       if (component) {
-        const def = getComponentDefinition(component.type, customComponents)
+        const def = getComponentDefinitionForInstance(component.type, customComponents, component)
+
+
         if (def) {
           const pin = def.pins.find((p) => p.index === source.pinIndex)
           return pin?.bitWidth ?? 1
@@ -178,7 +208,16 @@ export function compile(
   const compiledComponents: CompiledComponent[] = []
 
   for (const component of circuit.components) {
-    const def = getComponentDefinition(component.type, customComponents)
+    const splitMergeConfig = component.type === 'SPLIT_MERGE'
+      ? normalizeSplitMergeConfig(component.splitMerge)
+      : undefined
+
+      const def = getComponentDefinitionForInstance(component.type, customComponents, {
+        ...component,
+        splitMerge: splitMergeConfig ?? component.splitMerge,
+      })
+
+
     if (!def) {
       console.warn('Unknown component type:', component.type)
       continue
@@ -245,6 +284,7 @@ export function compile(
       type: component.type,
       inputNetIds,
       outputNetIds,
+      splitMergeConfig,
     })
   }
 

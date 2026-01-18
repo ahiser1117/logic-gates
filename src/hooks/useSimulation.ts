@@ -54,7 +54,9 @@ export function useSimulation(): SimulationResult {
         const comp = netlist.components.find((c) => c.id === source.componentId)
         if (comp) {
           // Find the output net for this specific pin
-          const def = getComponentDefinition(comp.type, customComponents)
+          const def = getComponentDefinition(comp.type, customComponents, {
+            splitMerge: comp.splitMergeConfig,
+          })
           if (def) {
             const outputPins = def.pins.filter((p) => p.direction === 'output')
             const outputPinIdx = outputPins.findIndex((p) => p.index === source.pinIndex)
@@ -76,7 +78,9 @@ export function useSimulation(): SimulationResult {
     const componentPinValues = new Map<ComponentId, Map<number, boolean | boolean[]>>()
 
     for (const comp of netlist.components) {
-      const def = getComponentDefinition(comp.type, customComponents)
+      const def = getComponentDefinition(comp.type, customComponents, {
+        splitMerge: comp.splitMergeConfig,
+      })
       if (!def) continue
 
       const pinValues = new Map<number, boolean | boolean[]>()

@@ -46,9 +46,10 @@ ui: {
 ## Key Actions
 
 ### Circuit
-- `addComponent(type, x, y)` - add gate or custom component
+- `addComponent(type, x, y)` - add gate or custom component (Split/Merge gets default config)
 - `moveComponent(id, x, y, initialWireState?)` - reposition gate (recalculates L-shape wire waypoints)
 - `addWire(source, target, waypoints?)` - connect pins (auto-replaces existing connection to target)
+- `setSplitMergeConfig(id, config)` - update Split/Merge partitions/mode and drop connected wires on change
 - `updateWireWaypoints(id, waypoints)` - set custom waypoints for wire path editing
 - `addInput()` / `removeInput(id)` - manage input board (minimum 1 pin always kept)
 - `addOutput()` / `removeOutput(id)` - manage output board (minimum 1 pin always kept)
@@ -81,6 +82,7 @@ Initial circuit starts with 1 default input and 1 default output. Boards are pos
 - **Targets**: Output Board pins, component input pins
 - Component input pins cannot connect to each other or to Output Board pins
 - Self-connections (component output to its own input) are rejected
+- Split/Merge pins validate using per-pin width (bus vs partitions)
 
 ## Wire Path Cache
 Moving components or boards invalidates affected wire paths:

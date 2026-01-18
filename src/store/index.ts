@@ -32,6 +32,7 @@ import type {
   CustomComponentId,
   CustomComponentDefinition,
   Point,
+  SplitMergeConfig,
 } from '../types/circuit'
 
 // Initial wire state captured at drag start for L-shape recalculation
@@ -51,6 +52,7 @@ import { createCustomComponentId } from '../types/circuit'
 import { validateCircuitForComponent } from '../utils/validation'
 import { computePinLayout } from '../utils/pinLayout'
 import { getComponentDefinition } from '../simulation/compiler'
+import { createDefaultSplitMergeConfig, normalizeSplitMergeConfig } from '../types'
 import type { UIState, Viewport, PinRef, DragState, HoveredButton, ContextMenuState } from '../types/ui'
 import { initialUIState } from '../types/ui'
 
@@ -93,6 +95,8 @@ interface AppState {
   addOutput: (label?: string) => OutputId
   removeOutput: (id: OutputId) => void
   renameOutput: (id: OutputId, label: string) => void
+
+  setSplitMergeConfig: (id: ComponentId, config: SplitMergeConfig) => void
 
   moveInputBoard: (x: number, y: number, initialWireState?: InitialWireState[]) => void
   moveOutputBoard: (x: number, y: number, initialWireState?: InitialWireState[]) => void
@@ -154,7 +158,13 @@ export const useStore = create<AppState>()(
     addComponent: (type, x, y) => {
       const id = nextComponentId++ as ComponentId
       set((state) => {
-        state.circuit.components.push({ id, type, x, y })
+        state.circuit.components.push({
+          id,
+          type,
+          x,
+          y,
+          splitMerge: type === 'SPLIT_MERGE' ? createDefaultSplitMergeConfig() : undefined,
+        })
       })
       return id
     },
@@ -461,6 +471,31 @@ export const useStore = create<AppState>()(
         const output = state.circuit.outputs.find((o) => o.id === id)
         if (output) {
           output.label = label
+        }
+      })
+    },
+
+    setSplitMergeConfig: (id, config) => {
+      set((state) => {
+        const component = state.circuit.components.find((c) => c.id === id)
+        if (!component || component.type !== 'SPLIT_MERGE') return
+        const nextConfig = normalizeSplitMergeConfig(config)
+        const prevConfig = component.splitMerge
+        const changed =
+          !prevConfig ||
+          prevConfig.mode !== nextConfig.mode ||
+          prevConfig.partitions.length !== nextConfig.partitions.length ||
+          prevConfig.partitions.some((size, index) => size !== nextConfig.partitions[index])
+
+        component.splitMerge = nextConfig
+
+        if (changed) {
+          state.circuit.wires = state.circuit.wires.filter(
+            (w) =>
+              !(w.source.type === 'component' && w.source.componentId === id) &&
+              !(w.target.type === 'component' && w.target.componentId === id)
+          )
+          clearPathsForComponent(id, state.circuit)
         }
       })
     },
@@ -851,7 +886,7 @@ export const useStore = create<AppState>()(
         if (p.type === 'component') {
           const component = state.circuit.components.find((c) => c.id === p.componentId)
           if (component) {
-            const def = getComponentDefinition(component.type, state.customComponents)
+            const def = getComponentDefinition(component.type, state.customComponents, component)
             if (def) {
               const pin = def.pins.find((pin) => pin.index === p.pinIndex)
               return pin?.bitWidth ?? 1
@@ -897,31 +932,55 @@ export const useStore = create<AppState>()(
       }
 
       // Helper to validate bit width compatibility and auto-adapt output board pins
-      const validateAndAdaptBitWidth = (sourcePin: PinRef, targetPin: PinRef): boolean => {
-        const sourceBitWidth = getPinBitWidth(sourcePin)
-        const targetBitWidth = getPinBitWidth(targetPin)
-
-        // If target is output board pin, auto-adapt its bitWidth to match source
-        if (targetPin.type === 'output') {
-          if (sourceBitWidth !== targetBitWidth) {
-            set((s) => {
-              const output = s.circuit.outputs.find((o) => o.id === targetPin.outputId)
-              if (output) {
-                output.bitWidth = sourceBitWidth
-              }
-            })
+        const getSplitMergePinWidth = (pin: PinRef): number | null => {
+          if (pin.type !== 'component') return null
+          const component = state.circuit.components.find((c) => c.id === pin.componentId)
+          if (!component || component.type !== 'SPLIT_MERGE') return null
+          const config = normalizeSplitMergeConfig(component.splitMerge)
+          if (pin.pinIndex === 0) {
+            return config.partitions.reduce((sum, size) => sum + size, 0)
           }
+          return config.partitions[pin.pinIndex - 1] ?? 1
+        }
+
+        const validateAndAdaptBitWidth = (sourcePin: PinRef, targetPin: PinRef): boolean => {
+          const sourceBitWidth = getPinBitWidth(sourcePin)
+          const targetBitWidth = getPinBitWidth(targetPin)
+
+          // If target is output board pin, auto-adapt its bitWidth to match source
+          if (targetPin.type === 'output') {
+            if (sourceBitWidth !== targetBitWidth) {
+              set((s) => {
+                const output = s.circuit.outputs.find((o) => o.id === targetPin.outputId)
+                if (output) {
+                  output.bitWidth = sourceBitWidth
+                }
+              })
+            }
+            return true
+          }
+
+          const targetSplitWidth = getSplitMergePinWidth(targetPin)
+          if (targetSplitWidth !== null && targetSplitWidth !== sourceBitWidth) {
+            console.warn(`Split/Merge pin width mismatch: pin=${targetSplitWidth}, source=${sourceBitWidth}`)
+            return false
+          }
+
+          const sourceSplitWidth = getSplitMergePinWidth(sourcePin)
+          if (sourceSplitWidth !== null && sourceSplitWidth !== targetBitWidth) {
+            console.warn(`Split/Merge pin width mismatch: pin=${sourceSplitWidth}, target=${targetBitWidth}`)
+            return false
+          }
+
+          // If target is component input pin, reject if bit widths don't match
+          if (targetPin.type === 'component' && sourceBitWidth !== targetBitWidth) {
+            console.warn(`Bit width mismatch: source=${sourceBitWidth}, target=${targetBitWidth}`)
+            return false
+          }
+
           return true
         }
 
-        // If target is component input pin, reject if bit widths don't match
-        if (targetPin.type === 'component' && sourceBitWidth !== targetBitWidth) {
-          console.warn(`Bit width mismatch: source=${sourceBitWidth}, target=${targetBitWidth}`)
-          return false
-        }
-
-        return true
-      }
 
       // Try startPin as source, pin as target
       const source1 = canBeSource(startPin)
