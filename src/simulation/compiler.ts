@@ -44,7 +44,7 @@ export function compile(
   }
 
   // Helper to get or create net for a pin
-  function getOrCreateNet(key: string): NetId {
+  function getOrCreateNet(key: string, bitWidth: number = 1): NetId {
     if (netMap.has(key)) {
       return netMap.get(key)!
     }
@@ -53,16 +53,37 @@ export function compile(
       id: netId,
       driver: null,
       readers: [],
-      value: false,
+      value: bitWidth === 1 ? false : new Array(bitWidth).fill(false),
+      bitWidth,
     })
     netMap.set(key, netId)
     return netId
+  }
+
+  // Helper to get bit width from wire source
+  function getSourceBitWidth(source: Wire['source']): number {
+    if (source.type === 'input') {
+      const input = circuit.inputs.find((i) => i.id === source.inputId)
+      return input?.bitWidth ?? 1
+    }
+    if (source.type === 'component') {
+      const component = circuit.components.find((c) => c.id === source.componentId)
+      if (component) {
+        const def = getComponentDefinition(component.type, customComponents)
+        if (def) {
+          const pin = def.pins.find((p) => p.index === source.pinIndex)
+          return pin?.bitWidth ?? 1
+        }
+      }
+    }
+    return 1
   }
 
   // Process all wires
   for (const wire of circuit.wires) {
     const sourceKey = getPinKey(wire.source)
     const targetKey = getPinKey(wire.target)
+    const bitWidth = getSourceBitWidth(wire.source)
 
     // Source and target should share the same net
     let netId: NetId
@@ -99,7 +120,7 @@ export function compile(
       netId = netMap.get(targetKey)!
       netMap.set(sourceKey, netId)
     } else {
-      netId = getOrCreateNet(sourceKey)
+      netId = getOrCreateNet(sourceKey, bitWidth)
       netMap.set(targetKey, netId)
     }
 
@@ -174,12 +195,14 @@ export function compile(
         inputNetIds.push(netMap.get(key)!)
       } else {
         // Floating input - create a net with no driver
+        const pinBitWidth = pin.bitWidth ?? 1
         const netId = nets.length as NetId
         nets.push({
           id: netId,
           driver: null,
           readers: [{ type: 'component', componentId: component.id, pinIndex: pin.index }],
-          value: false,
+          value: pinBitWidth === 1 ? false : new Array(pinBitWidth).fill(false),
+          bitWidth: pinBitWidth,
         })
         netMap.set(key, netId)
         inputNetIds.push(netId)
@@ -202,12 +225,14 @@ export function compile(
       if (netMap.has(outputKey)) {
         outputNetId = netMap.get(outputKey)!
       } else {
+        const pinBitWidth = outputPin.bitWidth ?? 1
         outputNetId = nets.length as NetId
         nets.push({
           id: outputNetId,
           driver: { type: 'component', componentId: component.id, pinIndex: outputPin.index },
           readers: [],
-          value: false,
+          value: pinBitWidth === 1 ? false : new Array(pinBitWidth).fill(false),
+          bitWidth: pinBitWidth,
         })
         netMap.set(outputKey, outputNetId)
       }

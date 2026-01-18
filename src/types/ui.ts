@@ -1,5 +1,13 @@
 import type { ComponentId, WireId, InputId, OutputId, GateType, Point } from './circuit'
 
+// === Context Menu State ===
+export interface ContextMenuState {
+  type: 'input-bitwidth' | 'multi-bit-input'
+  inputId: InputId
+  screenX: number
+  screenY: number
+}
+
 // === Viewport State ===
 export interface Viewport {
   panX: number
@@ -64,6 +72,7 @@ export interface UIState {
   hoveredInputId: InputId | null
   hoveredOutputId: OutputId | null
   hoveredButton: HoveredButton
+  contextMenu: ContextMenuState | null
 }
 
 // === Initial UI State ===
@@ -94,4 +103,5 @@ export const initialUIState: UIState = {
   hoveredInputId: null,
   hoveredOutputId: null,
   hoveredButton: null,
+  contextMenu: null,
 }

@@ -4,9 +4,9 @@ import { compile, evaluate, getComponentDefinition } from '../simulation'
 import type { OutputId, WireId, ComponentId } from '../types'
 
 export interface SimulationResult {
-  outputValues: Map<OutputId, boolean>
-  wireValues: Map<WireId, boolean>
-  componentPinValues: Map<ComponentId, Map<number, boolean>>
+  outputValues: Map<OutputId, boolean | boolean[]>
+  wireValues: Map<WireId, boolean | boolean[]>
+  componentPinValues: Map<ComponentId, Map<number, boolean | boolean[]>>
 }
 
 export function useSimulation(): SimulationResult {
@@ -33,14 +33,16 @@ export function useSimulation(): SimulationResult {
     }
 
     // Evaluate netlist (this sets net.value on all nets)
-    const inputValues = new Map(circuit.inputs.map((i) => [i.id, i.value]))
+    const inputValues = new Map<typeof circuit.inputs[0]['id'], boolean | boolean[]>(
+      circuit.inputs.map((i) => [i.id, i.value])
+    )
     const outputValues = evaluate(netlist, inputValues, customComponents)
 
     // Compute wire values from the evaluated netlist
-    const wireValues = new Map<WireId, boolean>()
+    const wireValues = new Map<WireId, boolean | boolean[]>()
 
     for (const wire of circuit.wires) {
-      let value = false
+      let value: boolean | boolean[] = false
       const source = wire.source
 
       if (source.type === 'input') {
@@ -71,13 +73,13 @@ export function useSimulation(): SimulationResult {
     }
 
     // Compute component pin values (for showing output pin states without wires)
-    const componentPinValues = new Map<ComponentId, Map<number, boolean>>()
+    const componentPinValues = new Map<ComponentId, Map<number, boolean | boolean[]>>()
 
     for (const comp of netlist.components) {
       const def = getComponentDefinition(comp.type, customComponents)
       if (!def) continue
 
-      const pinValues = new Map<number, boolean>()
+      const pinValues = new Map<number, boolean | boolean[]>()
 
       // Get output pin values from the evaluated nets
       const outputPins = def.pins.filter((p) => p.direction === 'output')

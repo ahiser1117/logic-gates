@@ -29,6 +29,7 @@ export interface PinDefinition {
   direction: 'input' | 'output'
   offsetX: number  // Relative to component center
   offsetY: number
+  bitWidth?: number  // Defaults to 1
 }
 
 // === Gate Definitions ===
@@ -65,7 +66,8 @@ export interface Component {
 export interface CircuitInput {
   id: InputId
   label: string
-  value: boolean
+  value: boolean | boolean[]  // boolean[] for multi-bit (LSB at index 0)
+  bitWidth: number            // Default 1
   order: number
 }
 
@@ -73,6 +75,7 @@ export interface CircuitInput {
 export interface CircuitOutput {
   id: OutputId
   label: string
+  bitWidth: number  // Default 1, auto-set when wire connects
   order: number
 }
 
@@ -141,8 +144,8 @@ export interface CustomComponentDefinition {
   name: string
   createdAt: number
   circuit: {
-    inputs: { id: InputId; label: string; order: number }[]
-    outputs: { id: OutputId; label: string; order: number }[]
+    inputs: { id: InputId; label: string; bitWidth: number; order: number }[]
+    outputs: { id: OutputId; label: string; bitWidth: number; order: number }[]
     components: Component[]
     wires: Wire[]
   }

@@ -19,7 +19,8 @@ export interface Net {
   id: NetId
   driver: NetDriver
   readers: NetReader[]
-  value: boolean
+  value: boolean | boolean[]  // boolean[] for multi-bit nets
+  bitWidth: number            // Default 1
 }
 
 // === Compiled Component ===
