@@ -23,6 +23,7 @@ circuit: {
   outputBoard: { x, y }       // Board position
 }
 ```
+Inputs support multi-bit values; `bitWidth` controls whether the stored value is a single boolean or a boolean array.
 
 ### Custom Components
 ```typescript
@@ -53,8 +54,10 @@ ui: {
 - `updateWireWaypoints(id, waypoints)` - set custom waypoints for wire path editing
 - `addInput()` / `removeInput(id)` - manage input board (minimum 1 pin always kept)
 - `addOutput()` / `removeOutput(id)` - manage output board (minimum 1 pin always kept)
-- `toggleInput(id)` - toggle input pin value on/off
+- `toggleInput(id)` - toggle input pin value on/off (single-bit only)
 - `renameInput(id, label)` / `renameOutput(id, label)` - rename board pins
+- `setInputBitWidth(id, bitWidth)` - update input pin width and stored value shape
+- `setInputValue(id, value)` - directly set input pin value (single- or multi-bit)
 - `moveInputBoard(x, y, initialWireState?)` / `moveOutputBoard(x, y, initialWireState?)` - reposition boards
 
 Initial circuit starts with 1 default input and 1 default output. Boards are positioned at ±360 (on major grid lines).
@@ -75,6 +78,7 @@ Initial circuit starts with 1 default input and 1 default output. Boards are pos
 - `setHoveredPin(componentId, pinIndex)` - component pin hover
 - `setHoveredBoardPin(inputId, outputId)` - board pin hover
 - `setHoveredButton(button)` - board button hover (add/remove/toggle)
+- `showContextMenu(menu)` / `hideContextMenu()` - context menus for board pins and Split/Merge config
 
 ## Wire Connection Validation
 `completeWiring()` enforces these rules:

@@ -38,7 +38,7 @@ export interface Selection {
 export type PinRef =
   | { type: 'component'; componentId: ComponentId; pinIndex: number; pinType: 'input' | 'output' }
   | { type: 'input'; inputId: InputId }
-  | { type: 'output'; outputId: number }
+  | { type: 'output'; outputId: OutputId }
 
 // === Wiring Mode State ===
 export interface WiringState {

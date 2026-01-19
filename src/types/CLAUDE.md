@@ -19,6 +19,7 @@ type CustomComponentId = string & { readonly __brand: 'CustomComponentId' }
 type PrimitiveGateType = 'NAND' | 'NOR' | 'SPLIT_MERGE'
 type ComponentType = PrimitiveGateType | CustomComponentId
 ```
+Split/Merge primitives use per-instance configuration (mode + partitions) stored on the component.
 Use `isPrimitiveGate(type)` to check if a component type is primitive.
 
 **Gate Definitions**:
@@ -43,7 +44,7 @@ interface CustomComponentDefinition {
 ```
 
 **Key Types**:
-- `Component` - gate instance with id, type, x, y, optional Split/Merge config
+- `Component` - gate instance with id, type, x, y, optional Split/Merge config (mode + partitions)
 - `Wire` - connection with source, target, and optional `waypoints?: Point[]` for custom paths
 - `Circuit` - full state including boards
 - `BoardPosition` - x, y for draggable boards
