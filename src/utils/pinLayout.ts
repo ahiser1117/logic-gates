@@ -1,13 +1,61 @@
-import type { PinDefinition } from '../types'
+import type { PinDefinition, SplitMergeConfig } from '../types'
 
 const MIN_WIDTH = 60
 const MAX_WIDTH = 120
 const GRID_SIZE = 20
+const PIN_SPACING = GRID_SIZE * 2 // 40px - double grid spacing
 
 export interface PinLayoutResult {
   width: number
   height: number
   pins: PinDefinition[]
+}
+
+function calculateSplitMergeHeight(partitionCount: number): number {
+  // Height based on partition count (BUS pin is centered vertically)
+  // Height = pin span + half-grid padding, minimum 2*GRID_SIZE
+  const partitions = Math.max(1, partitionCount)
+  const pinSpan = (partitions - 1) * PIN_SPACING
+  return Math.max(GRID_SIZE * 2, pinSpan + GRID_SIZE)
+}
+
+function calculateSplitMergeWidth(): number {
+  return 3 * GRID_SIZE
+}
+
+export function computeSplitMergePinLayout(config: SplitMergeConfig): PinLayoutResult {
+  const partitions = config.partitions.length
+  const height = calculateSplitMergeHeight(partitions)
+  const width = calculateSplitMergeWidth()
+
+  // Center-aligned pin positioning with double grid spacing
+  const partitionStartY = -((partitions - 1) * PIN_SPACING) / 2
+
+  const pins: PinDefinition[] = []
+
+  // BUS pin centered vertically
+  pins.push({
+    index: 0,
+    name: 'BUS',
+    direction: config.mode === 'merge' ? 'output' : 'input',
+    offsetX: config.mode === 'merge' ? width / 2 : -width / 2,
+    offsetY: 0,
+    bitWidth: config.partitions.reduce((sum, size) => sum + size, 0),
+  })
+
+  // Partition pins center-aligned
+  for (let i = 0; i < partitions; i++) {
+    pins.push({
+      index: i + 1,
+      name: `P${i}`,
+      direction: config.mode === 'merge' ? 'input' : 'output',
+      offsetX: config.mode === 'merge' ? -width / 2 : width / 2,
+      offsetY: partitionStartY + i * PIN_SPACING,
+      bitWidth: config.partitions[i],
+    })
+  }
+
+  return { width, height, pins }
 }
 
 function computeWidth(name: string): number {
@@ -31,39 +79,36 @@ export function computePinLayout(
 ): PinLayoutResult {
   const width = componentName ? computeWidth(componentName) : MIN_WIDTH
 
-  // Height formula: max(n_inputs, n_outputs) * 20 + 20 (matches NAND behavior)
+  // Height: pin span + half-grid padding, minimum 2*GRID_SIZE
   const maxPins = Math.max(inputCount, outputCount, 1)
-  const height = maxPins * 20 + 20
+  const pinSpan = (maxPins - 1) * PIN_SPACING
+  const height = Math.max(GRID_SIZE * 2, pinSpan + GRID_SIZE)
 
-  // Distribute pins evenly within available height (leaving 10px padding top/bottom)
-  const availableHeight = height - 20
-  const inputSpacing = inputCount > 1 ? availableHeight / (inputCount - 1) : 0
-  const outputSpacing = outputCount > 1 ? availableHeight / (outputCount - 1) : 0
-
-  const inputStartY = -((inputCount - 1) * inputSpacing) / 2
-  const outputStartY = -((outputCount - 1) * outputSpacing) / 2
+  // Center-aligned pin positioning with double grid spacing
+  const inputStartY = -((inputCount - 1) * PIN_SPACING) / 2
+  const outputStartY = -((outputCount - 1) * PIN_SPACING) / 2
 
   const pins: PinDefinition[] = []
 
-  // Input pins on left
+  // Input pins on left (center-aligned)
   for (let i = 0; i < inputCount; i++) {
     pins.push({
       index: i,
       name: inputLabels?.[i] ?? `I${i}`,
       direction: 'input',
       offsetX: -width / 2,
-      offsetY: inputStartY + i * inputSpacing,
+      offsetY: inputStartY + i * PIN_SPACING,
     })
   }
 
-  // Output pins on right
+  // Output pins on right (center-aligned)
   for (let i = 0; i < outputCount; i++) {
     pins.push({
       index: inputCount + i,
       name: outputLabels?.[i] ?? `O${i}`,
       direction: 'output',
       offsetX: width / 2,
-      offsetY: outputStartY + i * outputSpacing,
+      offsetY: outputStartY + i * PIN_SPACING,
     })
   }
 

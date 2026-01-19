@@ -1,5 +1,26 @@
 import type { ComponentId, WireId, InputId, OutputId, GateType, Point } from './circuit'
 
+// === Context Menu State ===
+export type ContextMenuState =
+  | {
+      type: 'input-bitwidth'
+      inputId: InputId
+      screenX: number
+      screenY: number
+    }
+  | {
+      type: 'split-merge-config'
+      componentId: ComponentId
+      screenX: number
+      screenY: number
+    }
+  | {
+      type: 'multi-bit-input'
+      inputId: InputId
+      screenX: number
+      screenY: number
+    }
+
 // === Viewport State ===
 export interface Viewport {
   panX: number
@@ -17,7 +38,7 @@ export interface Selection {
 export type PinRef =
   | { type: 'component'; componentId: ComponentId; pinIndex: number; pinType: 'input' | 'output' }
   | { type: 'input'; inputId: InputId }
-  | { type: 'output'; outputId: number }
+  | { type: 'output'; outputId: OutputId }
 
 // === Wiring Mode State ===
 export interface WiringState {
@@ -64,6 +85,7 @@ export interface UIState {
   hoveredInputId: InputId | null
   hoveredOutputId: OutputId | null
   hoveredButton: HoveredButton
+  contextMenu: ContextMenuState | null
 }
 
 // === Initial UI State ===
@@ -94,4 +116,5 @@ export const initialUIState: UIState = {
   hoveredInputId: null,
   hoveredOutputId: null,
   hoveredButton: null,
+  contextMenu: null,
 }

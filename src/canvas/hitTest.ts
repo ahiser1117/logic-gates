@@ -3,18 +3,23 @@ import type { Viewport } from '../types'
 import { screenToWorld } from './grid'
 import { getComponentDefinition } from '../simulation'
 import { computeWirePath } from './wirePathfinding'
+import {
+  getInputBoardWidth,
+  getOutputBoardWidth,
+  BOARD_HEADER_HEIGHT,
+  PIN_SPACING,
+  PIN_START_Y,
+  HEADER_BUTTON_OFFSET,
+  BASE_BOARD_WIDTH,
+  getMultiRowDisplayHeight,
+  getValueDisplayWidth,
+} from './boardLayout'
 
 const PIN_HIT_RADIUS = 12
 const WIRE_HIT_RADIUS = 6
 const BUTTON_RADIUS = 10
 const TOGGLE_RADIUS = 10
 export const HANDLE_SIZE = { width: 16, height: 8 } // Capsule dimensions in world units
-
-// Board layout constants (must match renderer)
-const BOARD_WIDTH = 100
-const BOARD_HEADER_HEIGHT = 40
-const PIN_SPACING = 40
-const PIN_START_Y = 40
 
 export interface HitResult {
   type:
@@ -68,7 +73,7 @@ export function hitTest(
 
   // Check components - use distance-based approach for pin vs body
   for (const component of circuit.components) {
-    const def = getComponentDefinition(component.type, customComponents)
+    const def = getComponentDefinition(component.type, customComponents, component)
     if (!def) continue
 
     const halfW = def.width / 2
@@ -148,54 +153,90 @@ function hitTestInputBoard(worldX: number, worldY: number, circuit: Circuit, sca
   const { x: boardX, y: boardY } = circuit.inputBoard
   const inputCount = circuit.inputs.length
 
-  // Calculate board bounds
-  const halfWidth = BOARD_WIDTH / 2
+  // Calculate dynamic board width
+  const boardWidth = getInputBoardWidth(circuit)
+  const halfWidth = boardWidth / 2
+
+  // Input board expands to the LEFT (pins on right stay fixed)
+  // Visual center shifts left as width increases
+  const widthDelta = boardWidth - BASE_BOARD_WIDTH
+  const visualCenterX = boardX - widthDelta / 2
+
+  // Pin X stays fixed at boardX + BASE_BOARD_WIDTH/2
+  const pinX = boardX + BASE_BOARD_WIDTH / 2
+
+  // Calculate board bounds based on visual center
   const pinsHeight = Math.max(0, inputCount * PIN_SPACING)
   const boardTop = boardY - BOARD_HEADER_HEIGHT / 2
   const boardBottom = boardY + BOARD_HEADER_HEIGHT / 2 + pinsHeight
+  const boardLeft = visualCenterX - halfWidth
+  const boardRight = visualCenterX + halfWidth
 
   // Check if within board area at all
   const inBoardArea =
-    worldX >= boardX - halfWidth - 10 &&
-    worldX <= boardX + halfWidth + 10 &&
+    worldX >= boardLeft - 10 &&
+    worldX <= boardRight + 10 &&
     worldY >= boardTop - 10 &&
     worldY <= boardBottom + 10
 
   if (!inBoardArea) return { type: 'none' }
 
-  // Check header buttons first (fixed position)
+  // Check header buttons first (fixed offset from visual center)
   // "-" button (left of label)
-  const minusBtnX = boardX - 34
+  const minusBtnX = visualCenterX - HEADER_BUTTON_OFFSET
   if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'input-remove-button' }
   }
 
   // "+" button (right of label)
-  const plusBtnX = boardX + 34
+  const plusBtnX = visualCenterX + HEADER_BUTTON_OFFSET
   if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'input-add-button' }
   }
 
   // Check each input pin
+  // Pin fixed on right, label fixed size relative to pin, toggle anchored to left of label
   for (const input of circuit.inputs) {
     const pinY = boardY + PIN_START_Y + input.order * PIN_SPACING
+    const bitWidth = input.bitWidth ?? 1
+    const isMultiBit = bitWidth > 1
 
-    // Check toggle button (left side)
-    const toggleX = boardX - 34
-    if (distance(worldX, worldY, toggleX, pinY) < TOGGLE_RADIUS) {
-      return { type: 'input-toggle', inputId: input.id }
+    // Label box: fixed size, fixed position relative to pin
+    const labelBoxWidth = 52
+    const labelBoxHeight = 14
+    const labelBoxEndX = pinX - 18  // Fixed gap before pin
+    const labelBoxX = labelBoxEndX - labelBoxWidth
+
+    // Toggle: right edge anchored at fixed offset from label left
+    const toggleRightEdge = labelBoxX - 6
+
+    if (isMultiBit) {
+      // Multi-bit: rectangular display area (slightly larger hit area for easier clicking)
+      const displayWidth = getValueDisplayWidth(bitWidth) + 4  // Extra padding for hit area
+      const displayHeight = getMultiRowDisplayHeight(bitWidth) + 4  // Use multi-row height + padding for hit area
+      // Right edge fixed, expands left
+      if (
+        worldX >= toggleRightEdge - displayWidth &&
+        worldX <= toggleRightEdge &&
+        worldY >= pinY - displayHeight / 2 &&
+        worldY <= pinY + displayHeight / 2
+      ) {
+        return { type: 'input-toggle', inputId: input.id }
+      }
+    } else {
+      // Single-bit: circular toggle, right edge at toggleRightEdge
+      const toggleX = toggleRightEdge - TOGGLE_RADIUS
+      if (distance(worldX, worldY, toggleX, pinY) < TOGGLE_RADIUS) {
+        return { type: 'input-toggle', inputId: input.id }
+      }
     }
 
-    // Check pin (right side, for wiring)
-    const pinX = boardX + BOARD_WIDTH / 2
+    // Check pin (right side, for wiring) - at fixed position
     if (distance(worldX, worldY, pinX, pinY) < PIN_HIT_RADIUS / scale) {
       return { type: 'pin', pinType: 'input-board', inputId: input.id }
     }
 
-    // Check label area (left-justified, starts at -20, width 52)
-    const labelBoxX = boardX - 20
-    const labelBoxWidth = 52
-    const labelBoxHeight = 14
+    // Check label area (between toggle and pin)
     if (
       worldX >= labelBoxX &&
       worldX <= labelBoxX + labelBoxWidth &&
@@ -208,8 +249,8 @@ function hitTestInputBoard(worldX: number, worldY: number, circuit: Circuit, sca
 
   // If within board bounds but didn't hit anything specific, it's a board drag
   if (
-    worldX >= boardX - halfWidth &&
-    worldX <= boardX + halfWidth &&
+    worldX >= boardLeft &&
+    worldX <= boardRight &&
     worldY >= boardTop &&
     worldY <= boardBottom
   ) {
@@ -223,47 +264,62 @@ function hitTestOutputBoard(worldX: number, worldY: number, circuit: Circuit, sc
   const { x: boardX, y: boardY } = circuit.outputBoard
   const outputCount = circuit.outputs.length
 
-  // Calculate board bounds
-  const halfWidth = BOARD_WIDTH / 2
+  // Calculate dynamic board width
+  const boardWidth = getOutputBoardWidth(circuit)
+  const halfWidth = boardWidth / 2
+
+  // Output board expands to the RIGHT (pins on left stay fixed)
+  // Visual center shifts right as width increases
+  const widthDelta = boardWidth - BASE_BOARD_WIDTH
+  const visualCenterX = boardX + widthDelta / 2
+
+  // Pin X stays fixed at boardX - BASE_BOARD_WIDTH/2
+  const pinX = boardX - BASE_BOARD_WIDTH / 2
+
+  // Calculate board bounds based on visual center
   const pinsHeight = Math.max(0, outputCount * PIN_SPACING)
   const boardTop = boardY - BOARD_HEADER_HEIGHT / 2
   const boardBottom = boardY + BOARD_HEADER_HEIGHT / 2 + pinsHeight
+  const boardLeft = visualCenterX - halfWidth
+  const boardRight = visualCenterX + halfWidth
 
   // Check if within board area at all
   const inBoardArea =
-    worldX >= boardX - halfWidth - 10 &&
-    worldX <= boardX + halfWidth + 10 &&
+    worldX >= boardLeft - 10 &&
+    worldX <= boardRight + 10 &&
     worldY >= boardTop - 10 &&
     worldY <= boardBottom + 10
 
   if (!inBoardArea) return { type: 'none' }
 
-  // Check header buttons first (fixed position)
+  // Check header buttons first (fixed offset from visual center)
   // "-" button (left of label)
-  const minusBtnX = boardX - 34
+  const minusBtnX = visualCenterX - HEADER_BUTTON_OFFSET
   if (distance(worldX, worldY, minusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'output-remove-button' }
   }
 
   // "+" button (right of label)
-  const plusBtnX = boardX + 34
+  const plusBtnX = visualCenterX + HEADER_BUTTON_OFFSET
   if (distance(worldX, worldY, plusBtnX, boardY) < BUTTON_RADIUS) {
     return { type: 'output-add-button' }
   }
 
-  // Check each output pin (left side, for wiring)
+  // Check each output pin (left side, for wiring) - at fixed position
+  // Pin fixed on left, label fixed size relative to pin, indicator anchored to right of label
   for (const output of circuit.outputs) {
     const pinY = boardY + PIN_START_Y + output.order * PIN_SPACING
-    const pinX = boardX - BOARD_WIDTH / 2
 
     if (distance(worldX, worldY, pinX, pinY) < PIN_HIT_RADIUS / scale) {
       return { type: 'pin', pinType: 'output-board', outputId: output.id }
     }
 
-    // Check label area (right-justified, starts at -32, width 52)
-    const labelBoxX = boardX - 32
+    // Label box: fixed size, fixed position relative to pin
     const labelBoxWidth = 52
     const labelBoxHeight = 14
+    const labelBoxX = pinX + 18  // Fixed gap after pin
+
+    // Check label area (between pin and value display)
     if (
       worldX >= labelBoxX &&
       worldX <= labelBoxX + labelBoxWidth &&
@@ -276,8 +332,8 @@ function hitTestOutputBoard(worldX: number, worldY: number, circuit: Circuit, sc
 
   // If within board bounds but didn't hit anything specific, it's a board drag
   if (
-    worldX >= boardX - halfWidth &&
-    worldX <= boardX + halfWidth &&
+    worldX >= boardLeft &&
+    worldX <= boardRight &&
     worldY >= boardTop &&
     worldY <= boardBottom
   ) {

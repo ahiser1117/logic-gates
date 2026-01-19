@@ -6,12 +6,13 @@ import { hitTest } from './hitTest'
 import { screenToWorld, worldToScreen, snapToGrid } from './grid'
 import { getComponentDefinition } from '../simulation'
 import type { ComponentType, ComponentId, InputId, OutputId, WireId, Point } from '../types'
+import { SplitMergeContextMenu } from '../components/SplitMergeContextMenu'
 import { computeWirePath, getWireEndpointWorld, GRID_STEP } from './wirePathfinding'
+import { BitWidthContextMenu } from '../components/BitWidthContextMenu'
+import { getInputBoardWidth, PIN_START_Y, PIN_SPACING } from './boardLayout'
 import './CanvasWorkspace.css'
 
 const GRID_SIZE = 20
-const PIN_START_Y = 40
-const PIN_SPACING = 40
 const WAYPOINT_HIT_RADIUS = 12 // World units for detecting clicks on waypoints
 
 /**
@@ -89,6 +90,68 @@ interface LabelEdit {
   worldY: number
 }
 
+// Separate component to ensure proper re-rendering
+function MultiBitInputOverlay({
+  multiBitEdit,
+  viewport,
+  inputRef,
+  onChange,
+  onComplete,
+  onCancel,
+}: {
+  multiBitEdit: MultiBitEdit
+  viewport: { panX: number; panY: number; zoom: number }
+  inputRef: React.RefObject<HTMLInputElement>
+  onChange: (value: string) => void
+  onComplete: () => void
+  onCancel: () => void
+}) {
+  const screen = worldToScreen(multiBitEdit.worldX, multiBitEdit.worldY, viewport)
+  const scale = viewport.zoom
+  const inputWidth = Math.max(40, multiBitEdit.bitWidth * 10) * scale
+  const inputHeight = 20 * scale
+  // Position at the toggle location (left side of input board row)
+  // Toggle offset is halfBoardWidth - 16
+  const toggleOffset = multiBitEdit.boardHalfWidth - 16
+  const inputX = screen.x - toggleOffset * scale - inputWidth / 2
+  const inputY = screen.y - inputHeight / 2
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      className="multi-bit-input"
+      value={multiBitEdit.value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          onComplete()
+        } else if (e.key === 'Escape') {
+          onCancel()
+        }
+      }}
+      onBlur={onComplete}
+      style={{
+        position: 'absolute',
+        left: `${inputX}px`,
+        top: `${inputY}px`,
+        width: `${inputWidth}px`,
+        height: `${inputHeight}px`,
+        fontSize: `${10 * scale}px`,
+      }}
+    />
+  )
+}
+
+interface MultiBitEdit {
+  inputId: InputId
+  value: string
+  worldX: number
+  worldY: number
+  bitWidth: number
+  boardHalfWidth: number
+}
+
 export function CanvasWorkspace() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -98,7 +161,9 @@ export function CanvasWorkspace() {
   const boardInitialWireState = useRef<InitialWireState[]>([])
   const wireHandleDragStart = useRef<{ wireId: WireId; handleIndex: number; originalPath: Point[] } | null>(null)
   const [labelEdit, setLabelEdit] = useState<LabelEdit | null>(null)
+  const [multiBitEdit, setMultiBitEdit] = useState<MultiBitEdit | null>(null)
   const labelInputRef = useRef<HTMLInputElement>(null)
+  const multiBitInputRef = useRef<HTMLInputElement>(null)
 
   const circuit = useStore((s) => s.circuit)
   const ui = useStore((s) => s.ui)
@@ -133,6 +198,10 @@ export function CanvasWorkspace() {
   const moveOutputBoard = useStore((s) => s.moveOutputBoard)
   const setHoveredButton = useStore((s) => s.setHoveredButton)
   const updateWireWaypoints = useStore((s) => s.updateWireWaypoints)
+  const contextMenu = useStore((s) => s.ui.contextMenu)
+  const showContextMenu = useStore((s) => s.showContextMenu)
+  const hideContextMenu = useStore((s) => s.hideContextMenu)
+  const setInputValue = useStore((s) => s.setInputValue)
 
   // Focus label input when editing starts
   useEffect(() => {
@@ -141,6 +210,20 @@ export function CanvasWorkspace() {
       labelInputRef.current.select()
     }
   }, [labelEdit?.id])
+
+  // Focus multi-bit input when editing starts
+  useEffect(() => {
+    if (multiBitEdit && multiBitInputRef.current) {
+      // Small delay to ensure proper mounting before focus
+      const timer = setTimeout(() => {
+        if (multiBitInputRef.current) {
+          multiBitInputRef.current.focus()
+          multiBitInputRef.current.select()
+        }
+      }, 10)
+      return () => clearTimeout(timer)
+    }
+  }, [multiBitEdit?.inputId])
 
   // Handle canvas resize and center viewport initially
   const hasInitialized = useRef(false)
@@ -236,9 +319,30 @@ export function CanvasWorkspace() {
           return
         }
 
-        // Handle input toggle
+        // Handle input toggle (single-bit) or multi-bit input edit
         if (hit.type === 'input-toggle' && hit.inputId !== undefined) {
-          toggleInput(hit.inputId)
+          const input = circuit.inputs.find((i) => i.id === hit.inputId)
+          if (input) {
+            const bitWidth = input.bitWidth ?? 1
+            if (bitWidth > 1) {
+              // Multi-bit: open text editor
+              const pinWorldY = circuit.inputBoard.y + PIN_START_Y + input.order * PIN_SPACING
+              const valueStr = Array.isArray(input.value)
+                ? input.value.map(b => b ? '1' : '0').reverse().join('')
+                : (input.value ? '1' : '0')
+              const boardHalfWidth = getInputBoardWidth(circuit) / 2
+              setMultiBitEdit({
+                inputId: hit.inputId,
+                value: valueStr,
+                worldX: circuit.inputBoard.x,
+                worldY: pinWorldY,
+                bitWidth: bitWidth,
+                boardHalfWidth: boardHalfWidth,
+              })
+              return
+            }
+            toggleInput(hit.inputId)
+          }
           return
         }
 
@@ -871,7 +975,7 @@ export function CanvasWorkspace() {
 
         // Select all components that intersect with the marquee
         for (const component of circuit.components) {
-          const def = getComponentDefinition(component.type, customComponents)
+          const def = getComponentDefinition(component.type, customComponents, component)
           if (!def) continue
 
           const halfW = def.width / 2
@@ -1045,13 +1149,67 @@ export function CanvasWorkspace() {
     setLabelEdit(null)
   }, [])
 
+  // Handle multi-bit value edit completion
+  const handleMultiBitEditComplete = useCallback(() => {
+    if (!multiBitEdit) return
+    const valueStr = multiBitEdit.value.replace(/[^01]/g, '') // Only allow 0 and 1
+    const boolArray: boolean[] = []
+    // Parse binary string (MSB first in input) to boolean array (LSB at index 0)
+    for (let i = valueStr.length - 1; i >= 0; i--) {
+      boolArray.push(valueStr[i] === '1')
+    }
+    // Pad or truncate to match bit width
+    while (boolArray.length < multiBitEdit.bitWidth) {
+      boolArray.push(false)
+    }
+    if (boolArray.length > multiBitEdit.bitWidth) {
+      boolArray.length = multiBitEdit.bitWidth
+    }
+    setInputValue(multiBitEdit.inputId, boolArray)
+    setMultiBitEdit(null)
+  }, [multiBitEdit, setInputValue])
+
+  // Handle multi-bit value edit cancellation
+  const handleMultiBitEditCancel = useCallback(() => {
+    setMultiBitEdit(null)
+  }, [])
+
   // Handle context menu (right-click) for adding/removing waypoints during wire creation
+  // or for showing bit width menu on input pins
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
-      if (!ui.wiring.active) return
-
       const { x, y } = getScreenCoords(e)
+
+      // If not wiring, check if right-clicking on an input pin to show bit width menu
+      if (!ui.wiring.active) {
+        const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
+         if (hit.type === 'pin' && hit.pinType === 'input-board' && hit.inputId !== undefined) {
+           showContextMenu({
+             type: 'input-bitwidth',
+             inputId: hit.inputId,
+             screenX: e.clientX,
+             screenY: e.clientY,
+           })
+           return
+         }
+
+         if (hit.type === 'component' && hit.componentId !== undefined) {
+           const component = circuit.components.find((c) => c.id === hit.componentId)
+           if (component?.type === 'SPLIT_MERGE') {
+             showContextMenu({
+               type: 'split-merge-config',
+               componentId: hit.componentId,
+               screenX: e.clientX,
+               screenY: e.clientY,
+             })
+             return
+           }
+         }
+         return
+       }
+
+
       const world = screenToWorld(x, y, ui.viewport)
 
       // Update drag coordinates so the preview uses the correct end position
@@ -1076,7 +1234,7 @@ export function CanvasWorkspace() {
       const snappedY = snapToGrid(world.y, GRID_SIZE)
       addWiringWaypoint({ x: snappedX, y: snappedY })
     },
-    [ui.wiring.active, ui.viewport, getScreenCoords, wiringWaypoints, addWiringWaypoint, removeWiringWaypoint, setDrag]
+    [ui.wiring.active, ui.viewport, ui.selection.wires, circuit, customComponents, getScreenCoords, wiringWaypoints, addWiringWaypoint, removeWiringWaypoint, setDrag, showContextMenu]
   )
 
   // Handle drop from palette
@@ -1178,6 +1336,45 @@ export function CanvasWorkspace() {
               borderRadius: `${2 * scale}px`,
               textAlign: isInput ? 'left' : 'right',
             }}
+          />
+        )
+      })()}
+      {multiBitEdit && (
+        <MultiBitInputOverlay
+          multiBitEdit={multiBitEdit}
+          viewport={ui.viewport}
+          inputRef={multiBitInputRef}
+          onChange={(value) => setMultiBitEdit({ ...multiBitEdit, value })}
+          onComplete={handleMultiBitEditComplete}
+          onCancel={handleMultiBitEditCancel}
+        />
+      )}
+      {contextMenu && contextMenu.type === 'input-bitwidth' && (() => {
+        const input = circuit.inputs.find((i) => i.id === contextMenu.inputId)
+        if (!input) return null
+        return (
+          <BitWidthContextMenu
+            inputId={contextMenu.inputId}
+            screenX={contextMenu.screenX}
+            screenY={contextMenu.screenY}
+            initialBitWidth={input.bitWidth}
+            onClose={hideContextMenu}
+          />
+        )
+      })()}
+      {contextMenu && contextMenu.type === 'split-merge-config' && (() => {
+        const component = circuit.components.find((c) => c.id === contextMenu.componentId)
+        if (!component || component.type !== 'SPLIT_MERGE') return null
+        const partitions = component.splitMerge?.partitions ?? [1, 1]
+        const initialValue = partitions.join(',')
+        return (
+          <SplitMergeContextMenu
+            componentId={component.id}
+            screenX={contextMenu.screenX}
+            screenY={contextMenu.screenY}
+            initialValue={initialValue}
+            mode={component.splitMerge?.mode ?? 'split'}
+            onClose={hideContextMenu}
           />
         )
       })()}

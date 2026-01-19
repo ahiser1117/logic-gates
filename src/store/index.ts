@@ -32,6 +32,7 @@ import type {
   CustomComponentId,
   CustomComponentDefinition,
   Point,
+  SplitMergeConfig,
 } from '../types/circuit'
 
 // Initial wire state captured at drag start for L-shape recalculation
@@ -50,7 +51,9 @@ export interface InitialWireState {
 import { createCustomComponentId } from '../types/circuit'
 import { validateCircuitForComponent } from '../utils/validation'
 import { computePinLayout } from '../utils/pinLayout'
-import type { UIState, Viewport, PinRef, DragState, HoveredButton } from '../types/ui'
+import { getComponentDefinition } from '../simulation/compiler'
+import { createDefaultSplitMergeConfig, normalizeSplitMergeConfig } from '../types'
+import type { UIState, Viewport, PinRef, DragState, HoveredButton, ContextMenuState } from '../types/ui'
 import { initialUIState } from '../types/ui'
 
 // === ID Counters ===
@@ -86,10 +89,14 @@ interface AppState {
   removeInput: (id: InputId) => void
   toggleInput: (id: InputId) => void
   renameInput: (id: InputId, label: string) => void
+  setInputBitWidth: (id: InputId, bitWidth: number) => void
+  setInputValue: (id: InputId, value: boolean | boolean[]) => void
 
   addOutput: (label?: string) => OutputId
   removeOutput: (id: OutputId) => void
   renameOutput: (id: OutputId, label: string) => void
+
+  setSplitMergeConfig: (id: ComponentId, config: SplitMergeConfig) => void
 
   moveInputBoard: (x: number, y: number, initialWireState?: InitialWireState[]) => void
   moveOutputBoard: (x: number, y: number, initialWireState?: InitialWireState[]) => void
@@ -123,14 +130,17 @@ interface AppState {
   setHoveredPin: (componentId: ComponentId | null, pinIndex: number | null) => void
   setHoveredBoardPin: (inputId: InputId | null, outputId: OutputId | null) => void
   setHoveredButton: (button: HoveredButton) => void
+
+  showContextMenu: (menu: ContextMenuState) => void
+  hideContextMenu: () => void
 }
 
 // === Initial Circuit State ===
 const initialCircuit: Circuit = {
   id: crypto.randomUUID(),
   name: 'Untitled Circuit',
-  inputs: [{ id: 1 as InputId, label: 'I0', value: false, order: 0 }],
-  outputs: [{ id: 1 as OutputId, label: 'O0', order: 0 }],
+  inputs: [{ id: 1 as InputId, label: 'I0', value: false, bitWidth: 1, order: 0 }],
+  outputs: [{ id: 1 as OutputId, label: 'O0', bitWidth: 1, order: 0 }],
   components: [],
   wires: [],
   inputBoard: { x: -360, y: 0 },
@@ -148,7 +158,13 @@ export const useStore = create<AppState>()(
     addComponent: (type, x, y) => {
       const id = nextComponentId++ as ComponentId
       set((state) => {
-        state.circuit.components.push({ id, type, x, y })
+        state.circuit.components.push({
+          id,
+          type,
+          x,
+          y,
+          splitMerge: type === 'SPLIT_MERGE' ? createDefaultSplitMergeConfig() : undefined,
+        })
       })
       return id
     },
@@ -301,6 +317,7 @@ export const useStore = create<AppState>()(
           id,
           label: label ?? `I${order}`,
           value: false,
+          bitWidth: 1,
           order,
         })
       })
@@ -327,7 +344,10 @@ export const useStore = create<AppState>()(
       set((state) => {
         const input = state.circuit.inputs.find((i) => i.id === id)
         if (input) {
-          input.value = !input.value
+          // Only toggle single-bit inputs
+          if (input.bitWidth === 1 && typeof input.value === 'boolean') {
+            input.value = !input.value
+          }
         }
       })
     },
@@ -341,6 +361,80 @@ export const useStore = create<AppState>()(
       })
     },
 
+    setInputBitWidth: (id, bitWidth) => {
+      set((state) => {
+        const input = state.circuit.inputs.find((i) => i.id === id)
+        if (input) {
+          const clampedWidth = Math.max(1, Math.min(32, bitWidth))
+          const oldWidth = input.bitWidth
+
+          if (clampedWidth === oldWidth) return
+
+          if (clampedWidth === 1) {
+            // Convert to single-bit: use LSB or false
+            if (Array.isArray(input.value)) {
+              input.value = input.value[0] ?? false
+            }
+          } else {
+            // Convert to multi-bit
+            const newValue: boolean[] = new Array(clampedWidth).fill(false)
+            if (Array.isArray(input.value)) {
+              // Copy existing bits, pad/truncate as needed
+              for (let i = 0; i < Math.min(input.value.length, clampedWidth); i++) {
+                newValue[i] = input.value[i] ?? false
+              }
+            } else {
+              // Single-bit becoming multi-bit: use old value as LSB
+              newValue[0] = input.value
+            }
+            input.value = newValue
+          }
+
+          input.bitWidth = clampedWidth
+
+          // Update connected output board pins to match the new bit width
+          for (const wire of state.circuit.wires) {
+            const source = wire.source
+            const target = wire.target
+            if (source.type === 'input' && source.inputId === id) {
+              if (target.type === 'output') {
+                const output = state.circuit.outputs.find((o) => o.id === target.outputId)
+                if (output) {
+                  output.bitWidth = clampedWidth
+                }
+              }
+            }
+          }
+        }
+      })
+    },
+
+    setInputValue: (id, value) => {
+      set((state) => {
+        const input = state.circuit.inputs.find((i) => i.id === id)
+        if (input) {
+          // Ensure value matches bitWidth
+          if (input.bitWidth === 1) {
+            input.value = Array.isArray(value) ? (value[0] ?? false) : value
+          } else {
+            if (Array.isArray(value)) {
+              // Pad or truncate to match bitWidth
+              const newValue: boolean[] = new Array(input.bitWidth).fill(false)
+              for (let i = 0; i < Math.min(value.length, input.bitWidth); i++) {
+                newValue[i] = value[i] ?? false
+              }
+              input.value = newValue
+            } else {
+              // Single boolean to multi-bit: use as LSB
+              const newValue: boolean[] = new Array(input.bitWidth).fill(false)
+              newValue[0] = value
+              input.value = newValue
+            }
+          }
+        }
+      })
+    },
+
     addOutput: (label) => {
       const id = nextOutputId++ as OutputId
       const state = get()
@@ -349,6 +443,7 @@ export const useStore = create<AppState>()(
         state.circuit.outputs.push({
           id,
           label: label ?? `O${order}`,
+          bitWidth: 1,
           order,
         })
       })
@@ -376,6 +471,31 @@ export const useStore = create<AppState>()(
         const output = state.circuit.outputs.find((o) => o.id === id)
         if (output) {
           output.label = label
+        }
+      })
+    },
+
+    setSplitMergeConfig: (id, config) => {
+      set((state) => {
+        const component = state.circuit.components.find((c) => c.id === id)
+        if (!component || component.type !== 'SPLIT_MERGE') return
+        const nextConfig = normalizeSplitMergeConfig(config)
+        const prevConfig = component.splitMerge
+        const changed =
+          !prevConfig ||
+          prevConfig.mode !== nextConfig.mode ||
+          prevConfig.partitions.length !== nextConfig.partitions.length ||
+          prevConfig.partitions.some((size, index) => size !== nextConfig.partitions[index])
+
+        component.splitMerge = nextConfig
+
+        if (changed) {
+          state.circuit.wires = state.circuit.wires.filter(
+            (w) =>
+              !(w.source.type === 'component' && w.source.componentId === id) &&
+              !(w.target.type === 'component' && w.target.componentId === id)
+          )
+          clearPathsForComponent(id, state.circuit)
         }
       })
     },
@@ -503,6 +623,23 @@ export const useStore = create<AppState>()(
         name
       )
 
+      // Create pins with bit widths from circuit inputs/outputs
+      const sortedInputs = [...state.circuit.inputs].sort((a, b) => a.order - b.order)
+      const sortedOutputs = [...state.circuit.outputs].sort((a, b) => a.order - b.order)
+
+      // Update pins with bitWidth from corresponding circuit inputs/outputs
+      const pinsWithBitWidth = pins.map((pin) => {
+        if (pin.direction === 'input') {
+          const inputIdx = pins.filter((p, i) => i < pins.indexOf(pin) && p.direction === 'input').length
+          const input = sortedInputs[inputIdx]
+          return { ...pin, bitWidth: input?.bitWidth ?? 1 }
+        } else {
+          const outputIdx = pins.filter((p, i) => i < pins.indexOf(pin) && p.direction === 'output').length
+          const output = sortedOutputs[outputIdx]
+          return { ...pin, bitWidth: output?.bitWidth ?? 1 }
+        }
+      })
+
       const definition: CustomComponentDefinition = {
         id,
         name,
@@ -511,11 +648,13 @@ export const useStore = create<AppState>()(
           inputs: state.circuit.inputs.map((i) => ({
             id: i.id,
             label: i.label,
+            bitWidth: i.bitWidth,
             order: i.order,
           })),
           outputs: state.circuit.outputs.map((o) => ({
             id: o.id,
             label: o.label,
+            bitWidth: o.bitWidth,
             order: o.order,
           })),
           components: structuredClone(state.circuit.components),
@@ -523,7 +662,7 @@ export const useStore = create<AppState>()(
         },
         width,
         height,
-        pins,
+        pins: pinsWithBitWidth,
       }
 
       set((state) => {
@@ -533,8 +672,8 @@ export const useStore = create<AppState>()(
         state.circuit = {
           id: crypto.randomUUID(),
           name: 'Untitled Circuit',
-          inputs: [{ id: nextInputId++ as InputId, label: 'I0', value: false, order: 0 }],
-          outputs: [{ id: nextOutputId++ as OutputId, label: 'O0', order: 0 }],
+          inputs: [{ id: nextInputId++ as InputId, label: 'I0', value: false, bitWidth: 1, order: 0 }],
+          outputs: [{ id: nextOutputId++ as OutputId, label: 'O0', bitWidth: 1, order: 0 }],
           components: [],
           wires: [],
           inputBoard: { x: -360, y: 0 },
@@ -734,6 +873,29 @@ export const useStore = create<AppState>()(
         return
       }
 
+      // Helper to get bit width of a pin reference
+      const getPinBitWidth = (p: PinRef): number => {
+        if (p.type === 'input') {
+          const input = state.circuit.inputs.find((i) => i.id === p.inputId)
+          return input?.bitWidth ?? 1
+        }
+        if (p.type === 'output') {
+          const output = state.circuit.outputs.find((o) => o.id === p.outputId)
+          return output?.bitWidth ?? 1
+        }
+        if (p.type === 'component') {
+          const component = state.circuit.components.find((c) => c.id === p.componentId)
+          if (component) {
+            const def = getComponentDefinition(component.type, state.customComponents, component)
+            if (def) {
+              const pin = def.pins.find((pin) => pin.index === p.pinIndex)
+              return pin?.bitWidth ?? 1
+            }
+          }
+        }
+        return 1
+      }
+
       // Get user-specified waypoints
       const userWaypoints = state.ui.wiring.waypoints
 
@@ -769,10 +931,66 @@ export const useStore = create<AppState>()(
         return undefined
       }
 
+      // Helper to validate bit width compatibility and auto-adapt output board pins
+        const getSplitMergePinWidth = (pin: PinRef): number | null => {
+          if (pin.type !== 'component') return null
+          const component = state.circuit.components.find((c) => c.id === pin.componentId)
+          if (!component || component.type !== 'SPLIT_MERGE') return null
+          const config = normalizeSplitMergeConfig(component.splitMerge)
+          if (pin.pinIndex === 0) {
+            return config.partitions.reduce((sum, size) => sum + size, 0)
+          }
+          return config.partitions[pin.pinIndex - 1] ?? 1
+        }
+
+        const validateAndAdaptBitWidth = (sourcePin: PinRef, targetPin: PinRef): boolean => {
+          const sourceBitWidth = getPinBitWidth(sourcePin)
+          const targetBitWidth = getPinBitWidth(targetPin)
+
+          // If target is output board pin, auto-adapt its bitWidth to match source
+          if (targetPin.type === 'output') {
+            if (sourceBitWidth !== targetBitWidth) {
+              set((s) => {
+                const output = s.circuit.outputs.find((o) => o.id === targetPin.outputId)
+                if (output) {
+                  output.bitWidth = sourceBitWidth
+                }
+              })
+            }
+            return true
+          }
+
+          const targetSplitWidth = getSplitMergePinWidth(targetPin)
+          if (targetSplitWidth !== null && targetSplitWidth !== sourceBitWidth) {
+            console.warn(`Split/Merge pin width mismatch: pin=${targetSplitWidth}, source=${sourceBitWidth}`)
+            return false
+          }
+
+          const sourceSplitWidth = getSplitMergePinWidth(sourcePin)
+          if (sourceSplitWidth !== null && sourceSplitWidth !== targetBitWidth) {
+            console.warn(`Split/Merge pin width mismatch: pin=${sourceSplitWidth}, target=${targetBitWidth}`)
+            return false
+          }
+
+          // If target is component input pin, reject if bit widths don't match
+          if (targetPin.type === 'component' && sourceBitWidth !== targetBitWidth) {
+            console.warn(`Bit width mismatch: source=${sourceBitWidth}, target=${targetBitWidth}`)
+            return false
+          }
+
+          return true
+        }
+
+
       // Try startPin as source, pin as target
       const source1 = canBeSource(startPin)
       const target1 = canBeTarget(pin)
       if (source1 && target1) {
+        // Validate bit widths
+        if (!validateAndAdaptBitWidth(startPin, pin)) {
+          state.cancelWiring()
+          return
+        }
         const finalWaypoints = computeFinalWaypoints(source1, target1, userWaypoints)
         const wireId = state.addWire(source1, target1, finalWaypoints)
         if (wireId) {
@@ -785,6 +1003,11 @@ export const useStore = create<AppState>()(
       const source2 = canBeSource(pin)
       const target2 = canBeTarget(startPin)
       if (source2 && target2) {
+        // Validate bit widths
+        if (!validateAndAdaptBitWidth(pin, startPin)) {
+          state.cancelWiring()
+          return
+        }
         // When reversing direction, reverse the user waypoints first
         const reversedUserWaypoints = [...userWaypoints].reverse()
         const finalWaypoints = computeFinalWaypoints(source2, target2, reversedUserWaypoints)
@@ -835,6 +1058,18 @@ export const useStore = create<AppState>()(
     setHoveredButton: (button) => {
       set((state) => {
         state.ui.hoveredButton = button
+      })
+    },
+
+    showContextMenu: (menu) => {
+      set((state) => {
+        state.ui.contextMenu = menu
+      })
+    },
+
+    hideContextMenu: () => {
+      set((state) => {
+        state.ui.contextMenu = null
       })
     },
   }))

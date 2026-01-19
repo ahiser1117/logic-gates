@@ -7,6 +7,7 @@ import './Palette.css'
 const GATES: { type: GateType; label: string }[] = [
   { type: 'NAND', label: 'NAND' },
   { type: 'NOR', label: 'NOR' },
+  { type: 'SPLIT_MERGE', label: 'Split/Merge' },
 ]
 
 export function Palette() {

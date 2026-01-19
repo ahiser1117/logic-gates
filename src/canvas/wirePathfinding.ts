@@ -9,13 +9,15 @@ import type {
   Point,
 } from '../types'
 import { getComponentDefinition } from '../simulation'
+import {
+  BASE_BOARD_WIDTH,
+  PIN_SPACING,
+  PIN_START_Y,
+} from './boardLayout'
 
 // Constants
 const GRID_STEP = 10 // Half of GRID_SIZE for smoother routing
 const PIN_EXIT_DISTANCE = 20 // Distance to extend straight out from pins before routing
-const BOARD_WIDTH = 100
-const PIN_SPACING = 40
-const PIN_START_Y = 40
 
 // Re-export Point for backwards compatibility
 export type { Point }
@@ -214,7 +216,7 @@ function getWireEndpointWorld(
     const component = circuit.components.find((c) => c.id === endpoint.componentId)
     if (!component) return null
 
-    const def = getComponentDefinition(component.type, customComponents)
+    const def = getComponentDefinition(component.type, customComponents, component)
     if (!def) return null
 
     const pin = def.pins.find((p) => p.index === endpoint.pinIndex)
@@ -229,8 +231,10 @@ function getWireEndpointWorld(
     if (!input) return null
 
     const { x: boardX, y: boardY } = circuit.inputBoard
+    // Pin position is fixed at boardX + BASE_BOARD_WIDTH/2 (right edge)
+    // regardless of visual board width (board expands left)
     return {
-      x: boardX + BOARD_WIDTH / 2,
+      x: boardX + BASE_BOARD_WIDTH / 2,
       y: boardY + PIN_START_Y + input.order * PIN_SPACING,
     }
   } else if (endpoint.type === 'output') {
@@ -238,8 +242,10 @@ function getWireEndpointWorld(
     if (!output) return null
 
     const { x: boardX, y: boardY } = circuit.outputBoard
+    // Pin position is fixed at boardX - BASE_BOARD_WIDTH/2 (left edge)
+    // regardless of visual board width (board expands right)
     return {
-      x: boardX - BOARD_WIDTH / 2,
+      x: boardX - BASE_BOARD_WIDTH / 2,
       y: boardY + PIN_START_Y + output.order * PIN_SPACING,
     }
   }
