@@ -21,6 +21,7 @@ import {
   BIT_ROW_HEIGHT,
   getRowCount,
   getMultiRowDisplayHeight,
+  getValueDisplayWidth,
 } from './boardLayout'
 
 // Helper to convert boolean[] to binary string (MSB first)
@@ -40,18 +41,7 @@ function getFirstBit(value: boolean | boolean[]): boolean {
   return value.some(b => b) // True if any bit is set
 }
 
-// Minimum width for value display elements
-const MIN_VALUE_DISPLAY_WIDTH = 28
-const PIXELS_PER_BIT = 7
-const VALUE_DISPLAY_PADDING = 12
 
-// Calculate value display width based on bit width (capped at BITS_PER_ROW for multi-row)
-function getValueDisplayWidth(bitWidth: number): number {
-  if (bitWidth <= 4) return MIN_VALUE_DISPLAY_WIDTH
-  // Cap at BITS_PER_ROW for multi-row display
-  const effectiveBits = Math.min(bitWidth, BITS_PER_ROW)
-  return effectiveBits * PIXELS_PER_BIT + VALUE_DISPLAY_PADDING
-}
 
 const COLORS = {
   gate: '#1e3a5f',
@@ -201,7 +191,8 @@ function drawComponent(
 
   // Draw label (use custom component name if available)
   ctx.fillStyle = COLORS.gateText
-  ctx.font = `bold ${12 * scale}px sans-serif`
+  const fontSize = component.type === 'SPLIT_MERGE' ? 9 : 12
+  ctx.font = `bold ${fontSize * scale}px sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
@@ -241,7 +232,7 @@ function drawComponent(
     const pinRadius = 8 * scale
     ctx.beginPath()
     ctx.arc(pinX, pinY, pinRadius, 0, Math.PI * 2)
-    ctx.fillStyle = pinActive ? COLORS.toggleOn : COLORS.boardPin
+    ctx.fillStyle = getFirstBit(pinActive) ? COLORS.toggleOn : COLORS.boardPin
     ctx.fill()
 
     // Draw hover outline

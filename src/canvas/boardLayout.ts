@@ -7,11 +7,13 @@ const GRID_SIZE = 20
 // This is also the reference width for board position - pins are at boardX +/- BASE_BOARD_WIDTH/2
 export const BASE_BOARD_WIDTH = 100
 
-// Minimum width needed per bit in binary display (monospace font)
-const PIXELS_PER_BIT = 7
-
-// Padding for the value display
-const VALUE_DISPLAY_PADDING = 12
+// Value display dimension constants (single source of truth)
+// Minimum width for value display elements (single-bit toggle size)
+export const MIN_VALUE_DISPLAY_WIDTH = 20
+// Width per bit in binary display (monospace font)
+export const PIXELS_PER_BIT = 4
+// Padding around the value display
+export const VALUE_DISPLAY_PADDING = 8
 
 // Fixed layout positions relative to board center
 export const BOARD_HEADER_HEIGHT = 40
@@ -23,7 +25,7 @@ export const HEADER_BUTTON_OFFSET = 34
 
 // Multi-row display constants (for bitWidth > 8)
 export const BITS_PER_ROW = 8
-export const BIT_ROW_HEIGHT = 10  // Vertical spacing between row centers
+export const BIT_ROW_HEIGHT = 7  // Vertical spacing between row centers
 export const MULTI_ROW_PADDING = 2  // Top/bottom padding inside multi-row container
 
 /**
@@ -54,14 +56,16 @@ export function getMultiRowDisplayWidth(bitWidth: number): number {
 }
 
 /**
- * Calculate the width needed for a multi-bit value display
- * Now caps at BITS_PER_ROW bits for multi-row support
+ * Calculate the width needed for a value display based on bit width.
+ * Single source of truth for renderer and hitTest.
+ * - 1-4 bits: MIN_VALUE_DISPLAY_WIDTH (28px)
+ * - 5-8 bits: scales with bit width
+ * - 9+ bits: capped at 8 bits (uses multi-row display)
  */
-function getValueDisplayWidth(bitWidth: number): number {
-  if (bitWidth <= 1) return 28 // Single-bit toggle size
+export function getValueDisplayWidth(bitWidth: number): number {
+  if (bitWidth <= 4) return MIN_VALUE_DISPLAY_WIDTH
   // Cap at BITS_PER_ROW bits - wider values wrap to multiple rows
-  const effectiveBits = Math.min(bitWidth, BITS_PER_ROW)
-  return effectiveBits * PIXELS_PER_BIT + VALUE_DISPLAY_PADDING
+  return getMultiRowDisplayWidth(bitWidth)
 }
 
 /**
@@ -70,7 +74,7 @@ function getValueDisplayWidth(bitWidth: number): number {
  * For bitWidth > 8, width is capped at 8-bit width (uses multi-row display).
  */
 export function calculateBoardWidth(maxBitWidth: number): number {
-  if (maxBitWidth <= 4) {
+  if (maxBitWidth <= 1) {
     return BASE_BOARD_WIDTH
   }
 
@@ -82,7 +86,7 @@ export function calculateBoardWidth(maxBitWidth: number): number {
   // The value display is at 34px from center, so we need:
   // halfWidth = 34 + displayWidth/2 + some padding
   const displayWidth = getValueDisplayWidth(effectiveBitWidth)
-  const neededHalfWidth = HEADER_BUTTON_OFFSET + displayWidth / 2 + 10
+  const neededHalfWidth = HEADER_BUTTON_OFFSET + displayWidth / 2 + 3
 
   // Full width, rounded up to grid size
   const fullWidth = neededHalfWidth * 2

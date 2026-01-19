@@ -12,6 +12,7 @@ import {
   HEADER_BUTTON_OFFSET,
   BASE_BOARD_WIDTH,
   getMultiRowDisplayHeight,
+  getValueDisplayWidth,
 } from './boardLayout'
 
 const PIN_HIT_RADIUS = 12
@@ -19,20 +20,6 @@ const WIRE_HIT_RADIUS = 6
 const BUTTON_RADIUS = 10
 const TOGGLE_RADIUS = 10
 export const HANDLE_SIZE = { width: 16, height: 8 } // Capsule dimensions in world units
-
-// Minimum width for value display elements
-const MIN_VALUE_DISPLAY_WIDTH = 28
-const PIXELS_PER_BIT = 7
-const VALUE_DISPLAY_PADDING = 12
-const BITS_PER_ROW = 8
-
-// Calculate value display width based on bit width (capped at BITS_PER_ROW for multi-row)
-function getValueDisplayWidth(bitWidth: number): number {
-  if (bitWidth <= 4) return MIN_VALUE_DISPLAY_WIDTH
-  // Cap at BITS_PER_ROW for multi-row display
-  const effectiveBits = Math.min(bitWidth, BITS_PER_ROW)
-  return effectiveBits * PIXELS_PER_BIT + VALUE_DISPLAY_PADDING
-}
 
 export interface HitResult {
   type:
