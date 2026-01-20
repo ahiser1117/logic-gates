@@ -79,17 +79,12 @@
   position: relative;
 }
 
+.palette-item.custom .edit-btn,
 .palette-item.custom .delete-btn {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #dc2626;
   border: none;
   color: white;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1;
   cursor: pointer;
   opacity: 0;
@@ -99,8 +94,30 @@
   justify-content: center;
 }
 
+.palette-item.custom .edit-btn {
+  top: -4px;
+  right: 14px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: #0ea5e9;
+}
+
+.palette-item.custom .delete-btn {
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #dc2626;
+}
+
+.palette-item.custom:hover .edit-btn,
 .palette-item.custom:hover .delete-btn {
   opacity: 1;
+}
+
+.palette-item.custom .edit-btn:hover {
+  background: #38bdf8;
 }
 
 .palette-item.custom .delete-btn:hover {

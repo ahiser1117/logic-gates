@@ -74,6 +74,7 @@ interface AppState {
 
   // Custom components
   customComponents: Map<CustomComponentId, CustomComponentDefinition>
+  editingCustomComponentId: CustomComponentId | null
 
   // Circuit actions
   addComponent: (type: ComponentType, x: number, y: number) => ComponentId
@@ -106,6 +107,7 @@ interface AppState {
   deleteCustomComponent: (id: CustomComponentId) => void
   loadCustomComponents: () => void
   saveCustomComponents: () => void
+  openCustomComponentForEdit: (id: CustomComponentId) => boolean
 
   // UI actions
   setViewport: (viewport: Partial<Viewport>) => void
@@ -153,6 +155,7 @@ export const useStore = create<AppState>()(
     circuit: initialCircuit,
     ui: initialUIState,
     customComponents: new Map<CustomComponentId, CustomComponentDefinition>(),
+    editingCustomComponentId: null,
 
     // === Circuit Actions ===
     addComponent: (type, x, y) => {
@@ -599,16 +602,21 @@ export const useStore = create<AppState>()(
         return null
       }
 
+      const editingId = state.editingCustomComponentId
+      const normalizedName = name.trim()
+
       // Check for duplicate name
       for (const [, def] of state.customComponents) {
-        if (def.name.toLowerCase() === name.toLowerCase()) {
-          console.warn('Component name already exists:', name)
-          return null
+        if (def.name.toLowerCase() === normalizedName.toLowerCase()) {
+          if (!editingId || def.id !== editingId) {
+            console.warn('Component name already exists:', name)
+            return null
+          }
         }
       }
 
       // Generate ID and compute layout
-      const id = createCustomComponentId(crypto.randomUUID())
+      const id = editingId ?? createCustomComponentId(crypto.randomUUID())
       const inputLabels = [...state.circuit.inputs]
         .sort((a, b) => a.order - b.order)
         .map((i) => i.label)
@@ -642,8 +650,8 @@ export const useStore = create<AppState>()(
 
       const definition: CustomComponentDefinition = {
         id,
-        name,
-        createdAt: Date.now(),
+        name: normalizedName,
+        createdAt: editingId ? (state.customComponents.get(editingId)?.createdAt ?? Date.now()) : Date.now(),
         circuit: {
           inputs: state.circuit.inputs.map((i) => ({
             id: i.id,
@@ -659,6 +667,8 @@ export const useStore = create<AppState>()(
           })),
           components: structuredClone(state.circuit.components),
           wires: structuredClone(state.circuit.wires),
+          inputBoard: structuredClone(state.circuit.inputBoard),
+          outputBoard: structuredClone(state.circuit.outputBoard),
         },
         width,
         height,
@@ -679,6 +689,8 @@ export const useStore = create<AppState>()(
           inputBoard: { x: -360, y: 0 },
           outputBoard: { x: 360, y: 0 },
         }
+
+        state.editingCustomComponentId = null
 
         // Clear selection
         state.ui.selection.components.clear()
@@ -723,6 +735,52 @@ export const useStore = create<AppState>()(
       } catch (e) {
         console.error('Failed to save custom components:', e)
       }
+    },
+
+    openCustomComponentForEdit: (id) => {
+      const state = get()
+      const definition = state.customComponents.get(id)
+      if (!definition) return false
+
+      set((draft) => {
+        draft.circuit = {
+          id: crypto.randomUUID(),
+          name: definition.name,
+          inputs: definition.circuit.inputs.map((input) => ({
+            id: input.id,
+            label: input.label,
+            value: false,
+            bitWidth: input.bitWidth,
+            order: input.order,
+          })),
+          outputs: definition.circuit.outputs.map((output) => ({
+            id: output.id,
+            label: output.label,
+            bitWidth: output.bitWidth,
+            order: output.order,
+          })),
+          components: structuredClone(definition.circuit.components),
+          wires: structuredClone(definition.circuit.wires),
+          inputBoard: structuredClone(definition.circuit.inputBoard),
+          outputBoard: structuredClone(definition.circuit.outputBoard),
+        }
+
+        draft.editingCustomComponentId = id
+        draft.ui.selection.components.clear()
+        draft.ui.selection.wires.clear()
+        draft.ui.wiring.active = false
+        draft.ui.wiring.startPin = null
+        draft.ui.wiring.waypoints = []
+        draft.ui.drag = {
+          type: 'none',
+          startX: 0,
+          startY: 0,
+          currentX: 0,
+          currentY: 0,
+        }
+      })
+
+      return true
     },
 
     // === UI Actions ===

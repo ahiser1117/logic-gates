@@ -38,7 +38,7 @@ interface CustomComponentDefinition {
   id: CustomComponentId
   name: string
   createdAt: number
-  circuit: { inputs, outputs, components, wires }
+  circuit: { inputs, outputs, components, wires, inputBoard, outputBoard }
   width, height, pins
 }
 ```

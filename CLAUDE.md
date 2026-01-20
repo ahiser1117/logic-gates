@@ -59,6 +59,11 @@ src/
 2. Click "Create Component" in Palette
 3. Custom components are saved to localStorage and persist across sessions
 
+### Editing custom components
+1. Use the Palette edit button to reopen a saved component
+2. The canvas replaces the current circuit and restores board positions
+3. Use "Save Changes" to overwrite the component and reset the canvas
+
 ### Modifying hit testing
 - Edit `canvas/hitTest.ts`
 - Constants must match `renderer.ts` (PIN_SPACING, BOARD_WIDTH, etc.)

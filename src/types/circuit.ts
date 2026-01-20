@@ -185,6 +185,8 @@ export interface CustomComponentDefinition {
     outputs: { id: OutputId; label: string; bitWidth: number; order: number }[]
     components: Component[]
     wires: Wire[]
+    inputBoard: BoardPosition
+    outputBoard: BoardPosition
   }
   width: number
   height: number

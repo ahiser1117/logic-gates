@@ -52,8 +52,8 @@ function evaluateCustomComponent(
     })),
     components: definition.circuit.components,
     wires: definition.circuit.wires,
-    inputBoard: { x: 0, y: 0 },
-    outputBoard: { x: 0, y: 0 },
+    inputBoard: definition.circuit.inputBoard,
+    outputBoard: definition.circuit.outputBoard,
   }
 
   // Compile and evaluate

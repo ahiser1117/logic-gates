@@ -32,6 +32,7 @@ Utility functions for custom component creation.
   - Width: 60-120px based on name length, rounded to nearest 20px
   - Height: `max(inputs, outputs) * 20 + 20` (matches NAND behavior)
   - Pins distributed evenly within available height
+- `componentDependencies.ts` - builds dependency trees for custom component dialogs
 
 ## Data Flow
 1. User interacts with canvas (mouse events)

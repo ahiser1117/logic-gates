@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import type { GateType, ComponentType, CustomComponentId } from '../types'
 import { CreateComponentDialog } from './CreateComponentDialog'
+import { DeleteComponentDialog } from './DeleteComponentDialog'
+import { EditComponentDialog } from './EditComponentDialog'
 import './Palette.css'
 
 const GATES: { type: GateType; label: string }[] = [
@@ -12,10 +14,13 @@ const GATES: { type: GateType; label: string }[] = [
 
 export function Palette() {
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<CustomComponentId | null>(null)
+  const [editTargetId, setEditTargetId] = useState<CustomComponentId | null>(null)
 
   const setDrag = useStore((s) => s.setDrag)
   const customComponents = useStore((s) => s.customComponents)
-  const deleteCustomComponent = useStore((s) => s.deleteCustomComponent)
 
   const handleDragStart = (e: React.DragEvent, componentType: ComponentType) => {
     e.dataTransfer.setData('componentType', componentType)
@@ -29,12 +34,18 @@ export function Palette() {
     })
   }
 
-  const handleDeleteCustomComponent = (e: React.MouseEvent, id: CustomComponentId, name: string) => {
+  const handleDeleteCustomComponent = (e: React.MouseEvent, id: CustomComponentId) => {
     e.stopPropagation()
     e.preventDefault()
-    if (confirm(`Delete component "${name}"?`)) {
-      deleteCustomComponent(id)
-    }
+    setDeleteTargetId(id)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleEditCustomComponent = (e: React.MouseEvent, id: CustomComponentId) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setEditTargetId(id)
+    setEditDialogOpen(true)
   }
 
   const sortedCustomComponents = Array.from(customComponents.values()).sort((a, b) =>
@@ -71,8 +82,15 @@ export function Palette() {
             >
               <div className="gate-icon gate-custom">{def.name}</div>
               <button
+                className="edit-btn"
+                onClick={(e) => handleEditCustomComponent(e, def.id)}
+                title="Edit component"
+              >
+                Edit
+              </button>
+              <button
                 className="delete-btn"
-                onClick={(e) => handleDeleteCustomComponent(e, def.id, def.name)}
+                onClick={(e) => handleDeleteCustomComponent(e, def.id)}
                 title="Delete component"
               >
                 x
@@ -89,6 +107,22 @@ export function Palette() {
       </div>
 
       <CreateComponentDialog isOpen={dialogOpen} onClose={() => setDialogOpen(false)} />
+      <DeleteComponentDialog
+        isOpen={deleteDialogOpen}
+        componentId={deleteTargetId}
+        onClose={() => {
+          setDeleteDialogOpen(false)
+          setDeleteTargetId(null)
+        }}
+      />
+      <EditComponentDialog
+        isOpen={editDialogOpen}
+        componentId={editTargetId}
+        onClose={() => {
+          setEditDialogOpen(false)
+          setEditTargetId(null)
+        }}
+      />
     </div>
   )
 }

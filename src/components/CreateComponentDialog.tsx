@@ -14,30 +14,38 @@ export function CreateComponentDialog({ isOpen, onClose }: Props) {
 
   const circuit = useStore((s) => s.circuit)
   const customComponents = useStore((s) => s.customComponents)
+  const editingCustomComponentId = useStore((s) => s.editingCustomComponentId)
   const createCustomComponent = useStore((s) => s.createCustomComponent)
 
   // Reset state when dialog opens
   useEffect(() => {
     if (isOpen) {
-      setName('')
+      const editingDef = editingCustomComponentId
+        ? customComponents.get(editingCustomComponentId)
+        : null
+      setName(editingDef?.name ?? '')
       setErrors([])
     }
-  }, [isOpen])
+  }, [isOpen, customComponents, editingCustomComponentId])
 
   if (!isOpen) return null
 
   const handleValidate = (): boolean => {
     const validationErrors: string[] = []
 
+    const trimmedName = name.trim()
+
     // Check name
-    if (!name.trim()) {
+    if (!trimmedName) {
       validationErrors.push('Component name is required')
     } else {
       // Check duplicate name
       for (const [, def] of customComponents) {
-        if (def.name.toLowerCase() === name.trim().toLowerCase()) {
-          validationErrors.push(`A component named "${def.name}" already exists`)
-          break
+        if (def.name.toLowerCase() === trimmedName.toLowerCase()) {
+          if (!editingCustomComponentId || def.id !== editingCustomComponentId) {
+            validationErrors.push(`A component named "${def.name}" already exists`)
+            break
+          }
         }
       }
     }
@@ -61,7 +69,9 @@ export function CreateComponentDialog({ isOpen, onClose }: Props) {
     if (id) {
       onClose()
     } else {
-      setErrors(['Failed to create component'])
+      setErrors([
+        editingCustomComponentId ? 'Failed to save component' : 'Failed to create component',
+      ])
     }
   }
 
@@ -76,10 +86,19 @@ export function CreateComponentDialog({ isOpen, onClose }: Props) {
   const inputLabels = circuit.inputs.map((i) => i.label).join(', ') || 'none'
   const outputLabels = circuit.outputs.map((o) => o.label).join(', ') || 'none'
 
+  const editingDef = editingCustomComponentId
+    ? customComponents.get(editingCustomComponentId)
+    : null
+  const dialogTitle = editingDef ? 'Save Component' : 'Create Component'
+  const submitLabel = editingDef ? 'Save Changes' : 'Create'
+
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div className="dialog" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
-        <h2>Create Component</h2>
+        <h2>{dialogTitle}</h2>
+        {editingDef && (
+          <p className="dialog-subtitle">Editing: {editingDef.name}</p>
+        )}
 
         <div className="dialog-field">
           <label htmlFor="component-name">Name</label>
@@ -118,7 +137,7 @@ export function CreateComponentDialog({ isOpen, onClose }: Props) {
         <div className="dialog-buttons">
           <button onClick={onClose}>Cancel</button>
           <button onClick={handleCreate} className="primary">
-            Create
+            {submitLabel}
           </button>
         </div>
       </div>

@@ -63,8 +63,9 @@ ui: {
 Initial circuit starts with 1 default input and 1 default output. Boards are positioned at ±360 (on major grid lines).
 
 ### Custom Components
-- `createCustomComponent(name)` - save current circuit as reusable component
+- `createCustomComponent(name)` - save current circuit as reusable component (overwrites when editing)
 - `deleteCustomComponent(id)` - remove custom component
+- `openCustomComponentForEdit(id)` - load custom component circuit into the canvas
 - `loadCustomComponents()` - load from localStorage (called on app init)
 - `saveCustomComponents()` - persist to localStorage
 

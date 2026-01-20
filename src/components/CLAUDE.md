@@ -21,7 +21,13 @@ Sidebar with draggable gate components.
 - Drag to canvas to add new gates/components
 - Sets `dataTransfer.setData('componentType', type)` on drag
 - "Create Component" button opens dialog to save current circuit
-- Custom components can be deleted via the inline delete button
+- Inline edit/delete buttons open confirmation dialogs
+- Delete dialog shows dependency tree for impacted components
+
+### DeleteComponentDialog.tsx / EditComponentDialog.tsx
+In-app confirmations for deleting or reopening custom components.
+- Shows dependency trees for higher-order components
+- Highlights the target component in the tree
 
 ### CreateComponentDialog.tsx
 Modal dialog for creating custom components.
