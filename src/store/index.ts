@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { enableMapSet } from 'immer'
 import {
+  clearPathCache,
   clearPathsForComponent,
   clearPathsForInputBoard,
   clearPathsForOutputBoard,
@@ -696,6 +697,7 @@ export const useStore = create<AppState>()(
         state.ui.selection.components.clear()
         state.ui.selection.wires.clear()
       })
+      clearPathCache()
 
       // Persist to localStorage
       get().saveCustomComponents()
@@ -779,6 +781,7 @@ export const useStore = create<AppState>()(
           currentY: 0,
         }
       })
+      clearPathCache()
 
       return true
     },
