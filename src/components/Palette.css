@@ -79,6 +79,13 @@
   position: relative;
 }
 
+.palette-item.custom.is-editing {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35);
+}
+
 .palette-item.custom .edit-btn,
 .palette-item.custom .delete-btn {
   position: absolute;

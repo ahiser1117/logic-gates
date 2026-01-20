@@ -21,6 +21,7 @@ export function Palette() {
 
   const setDrag = useStore((s) => s.setDrag)
   const customComponents = useStore((s) => s.customComponents)
+  const editingCustomComponentId = useStore((s) => s.editingCustomComponentId)
 
   const handleDragStart = (e: React.DragEvent, componentType: ComponentType) => {
     e.dataTransfer.setData('componentType', componentType)
@@ -76,7 +77,9 @@ export function Palette() {
           {sortedCustomComponents.map((def) => (
             <div
               key={def.id}
-              className="palette-item custom"
+              className={`palette-item custom${
+                editingCustomComponentId === def.id ? ' is-editing' : ''
+              }`}
               draggable
               onDragStart={(e) => handleDragStart(e, def.id)}
             >
@@ -101,9 +104,15 @@ export function Palette() {
       )}
 
       <div className="palette-actions">
-        <button className="create-component-btn" onClick={() => setDialogOpen(true)}>
-          + Create Component
-        </button>
+        {editingCustomComponentId ? (
+          <button className="create-component-btn" onClick={() => setDialogOpen(true)}>
+            Save
+          </button>
+        ) : (
+          <button className="create-component-btn" onClick={() => setDialogOpen(true)}>
+            + Create Component
+          </button>
+        )}
       </div>
 
       <CreateComponentDialog isOpen={dialogOpen} onClose={() => setDialogOpen(false)} />
