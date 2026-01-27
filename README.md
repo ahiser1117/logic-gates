@@ -2,6 +2,8 @@
 
 A web-based digital logic circuit designer and simulator built with React, TypeScript, and HTML5 Canvas.
 
+NOTE: This app was fully developed using Agent-based development tools (Claude Code, Codex, and OpenCode)
+
 ## Features
 
 - Design circuits using NAND and NOR gates
@@ -57,7 +59,3 @@ src/
 ├── components/   # React UI components
 └── hooks/        # Custom React hooks
 ```
-
-## License
-
-MIT
