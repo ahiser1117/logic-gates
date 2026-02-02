@@ -106,6 +106,7 @@ interface AppState {
   // Custom component actions
   createCustomComponent: (name: string) => CustomComponentId | null
   deleteCustomComponent: (id: CustomComponentId) => void
+  importComponents: (toInsert: CustomComponentDefinition[], toRemove?: CustomComponentId[], toUpdate?: CustomComponentDefinition[]) => void
   loadCustomComponents: () => void
   saveCustomComponents: () => void
   openCustomComponentForEdit: (id: CustomComponentId) => boolean
@@ -708,6 +709,25 @@ export const useStore = create<AppState>()(
     deleteCustomComponent: (id) => {
       set((state) => {
         state.customComponents.delete(id)
+      })
+      get().saveCustomComponents()
+    },
+
+    importComponents: (toInsert, toRemove, toUpdate) => {
+      set((state) => {
+        if (toRemove) {
+          for (const id of toRemove) {
+            state.customComponents.delete(id)
+          }
+        }
+        if (toUpdate) {
+          for (const def of toUpdate) {
+            state.customComponents.set(def.id, def)
+          }
+        }
+        for (const def of toInsert) {
+          state.customComponents.set(def.id, def)
+        }
       })
       get().saveCustomComponents()
     },

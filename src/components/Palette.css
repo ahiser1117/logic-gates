@@ -19,13 +19,49 @@
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .palette-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.palette-section-custom {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.palette-custom-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.palette-custom-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.palette-custom-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.palette-custom-list::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 2px;
+}
+
+.palette-custom-list::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.palette-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .palette-item {
@@ -86,41 +122,58 @@
   box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35);
 }
 
-.palette-item.custom .edit-btn,
-.palette-item.custom .delete-btn {
+.palette-item.custom .custom-actions {
   position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.palette-item.custom:hover .custom-actions {
+  opacity: 1;
+}
+
+.palette-item.custom .custom-actions button {
   border: none;
   color: white;
   font-size: 9px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+.palette-item.custom .export-btn {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #059669;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .palette-item.custom .edit-btn {
-  top: -4px;
-  right: 14px;
   padding: 2px 6px;
+  height: 16px;
   border-radius: 8px;
   background: #0ea5e9;
 }
 
 .palette-item.custom .delete-btn {
-  top: -4px;
-  right: -4px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: #dc2626;
 }
 
-.palette-item.custom:hover .edit-btn,
-.palette-item.custom:hover .delete-btn {
-  opacity: 1;
+.palette-item.custom .export-btn:hover {
+  background: #10b981;
 }
 
 .palette-item.custom .edit-btn:hover {
@@ -131,11 +184,29 @@
   background: #ef4444;
 }
 
+/* Export All button in section header */
+.export-all-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 9px;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.export-all-btn:hover {
+  color: #94a3b8;
+}
+
 /* Create component button */
 .palette-actions {
   margin-top: auto;
   padding-top: 16px;
   border-top: 1px solid #0f3460;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .create-component-btn {
@@ -152,4 +223,21 @@
 
 .create-component-btn:hover {
   background: #475569;
+}
+
+/* Import button */
+.import-btn {
+  width: 100%;
+  padding: 8px 12px;
+  background: #1e3a5f;
+  border: 1px solid #3b82f6;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.import-btn:hover {
+  background: #2563eb;
 }

@@ -192,3 +192,11 @@ export interface CustomComponentDefinition {
   height: number
   pins: PinDefinition[]
 }
+
+// === Component File Format (for .lgc export/import) ===
+export interface ComponentFileFormat {
+  format: 'logic-gate-components'
+  version: 1
+  exportedAt: number
+  components: CustomComponentDefinition[]
+}
