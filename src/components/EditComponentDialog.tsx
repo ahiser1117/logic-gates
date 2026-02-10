@@ -1,7 +1,9 @@
-import { useEffect } from 'react'
+import { useCallback } from 'react'
 import { useStore } from '../store'
 import type { CustomComponentId } from '../types'
 import { buildDependencyTree } from '../utils/componentDependencies'
+import { DependencyWarning } from './DependencyWarning'
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard'
 import './CreateComponentDialog.css'
 
 interface Props {
@@ -17,21 +19,14 @@ export function EditComponentDialog({ isOpen, componentId, onClose }: Props) {
   const component = componentId ? customComponents.get(componentId) : null
   const dependencyInfo = componentId ? buildDependencyTree(componentId, customComponents) : null
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
-      } else if (e.key === 'Enter') {
-        if (componentId) {
-          openCustomComponentForEdit(componentId)
-          onClose()
-        }
-      }
+  const handleConfirm = useCallback(() => {
+    if (componentId) {
+      openCustomComponentForEdit(componentId)
+      onClose()
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [componentId, isOpen, onClose, openCustomComponentForEdit])
+  }, [componentId, openCustomComponentForEdit, onClose])
+
+  useDialogKeyboard(isOpen, onClose, handleConfirm)
 
   if (!isOpen || !component) return null
 
@@ -51,29 +46,11 @@ export function EditComponentDialog({ isOpen, componentId, onClose }: Props) {
           <p>Any unsaved changes will be lost.</p>
         </div>
 
-        {dependencyInfo && dependencyInfo.total > 0 && (
-          <div className="dialog-warning">
-            <p>
-              This component is used by {dependencyInfo.total} custom component
-              {dependencyInfo.total > 1 ? 's' : ''}:
-            </p>
-            <div className="dialog-warning-tree">
-              {dependencyInfo.lines.map((line, index) => (
-                <div key={`${line.prefix}${line.name}-${index}`} className="dialog-warning-line">
-                  <span className="dialog-warning-prefix">{line.prefix}</span>
-                  <span
-                    className={line.isTarget ? 'dialog-warning-target' : undefined}
-                  >
-                    {line.name}
-                  </span>
-                  {line.note && !line.isTarget && (
-                    <span className="dialog-warning-note">({line.note})</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p>Edits may require updating those definitions.</p>
-          </div>
+        {dependencyInfo && (
+          <DependencyWarning
+            dependencyInfo={dependencyInfo}
+            message="Edits may require updating those definitions."
+          />
         )}
 
         <div className="dialog-buttons">

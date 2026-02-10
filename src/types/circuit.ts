@@ -11,7 +11,7 @@ export type InputId = number & { readonly __brand: 'InputId' }
 export type OutputId = number & { readonly __brand: 'OutputId' }
 
 // === Gate Types ===
-export type PrimitiveGateType = 'NAND' | 'NOR' | 'SPLIT_MERGE'
+export type PrimitiveGateType = 'NAND' | 'NOR' | 'SR_LATCH' | 'SPLIT_MERGE'
 
 export type SplitMergeMode = 'split' | 'merge'
 
@@ -77,6 +77,16 @@ export const GATE_DEFINITIONS: Record<GateType, { width: number; height: number;
       { index: 0, name: 'A', direction: 'input', offsetX: -30, offsetY: -20 },
       { index: 1, name: 'B', direction: 'input', offsetX: -30, offsetY: 20 },
       { index: 2, name: 'Y', direction: 'output', offsetX: 30, offsetY: 0 },
+    ],
+  },
+  SR_LATCH: {
+    width: 60,
+    height: 60,
+    pins: [
+      { index: 0, name: 'S', direction: 'input', offsetX: -30, offsetY: -20 },
+      { index: 1, name: 'R', direction: 'input', offsetX: -30, offsetY: 20 },
+      { index: 2, name: 'Q', direction: 'output', offsetX: 30, offsetY: -20 },
+      { index: 3, name: 'Q̄', direction: 'output', offsetX: 30, offsetY: 20 },
     ],
   },
   SPLIT_MERGE: {
@@ -168,7 +178,7 @@ export function createCustomComponentId(uuid: string): CustomComponentId {
 
 // === Type Guards ===
 export function isPrimitiveGate(type: ComponentType): type is PrimitiveGateType {
-  return type === 'NAND' || type === 'NOR' || type === 'SPLIT_MERGE'
+  return type === 'NAND' || type === 'NOR' || type === 'SR_LATCH' || type === 'SPLIT_MERGE'
 }
 
 export function getSplitMergeConfig(component?: Component): SplitMergeConfig {

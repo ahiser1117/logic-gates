@@ -2,6 +2,7 @@ import type { Netlist } from './types'
 import type {
   InputId,
   OutputId,
+  ComponentId,
   PrimitiveGateType,
   CustomComponentId,
   CustomComponentDefinition,
@@ -10,10 +11,32 @@ import type {
 import { isPrimitiveGate } from '../types'
 import { compile } from './compiler'
 
+// === SR Latch State ===
+// Keyed by instance path: "compId" for top-level, "parentId/childId" for nested
+const latchStates = new Map<string, { q: boolean }>()
+
+export function resetLatchStates(): void {
+  latchStates.clear()
+}
+
+export function removeLatchState(id: ComponentId): void {
+  const prefix = String(id)
+  for (const key of latchStates.keys()) {
+    if (key === prefix || key.startsWith(prefix + '/')) {
+      latchStates.delete(key)
+    }
+  }
+}
+
+function createDefaultValue(bitWidth: number): boolean | boolean[] {
+  return bitWidth === 1 ? false : new Array(bitWidth).fill(false)
+}
+
 // Gate evaluation functions for primitive gates
 const GATE_FUNCTIONS: Record<PrimitiveGateType, (inputs: boolean[]) => boolean> = {
   NAND: (inputs) => !(inputs[0] && inputs[1]),
   NOR: (inputs) => !(inputs[0] || inputs[1]),
+  SR_LATCH: () => false, // Placeholder — SR Latch uses special-case evaluation
   SPLIT_MERGE: (inputs) => inputs[0] ?? false,
 }
 
@@ -22,15 +45,13 @@ function evaluateCustomComponent(
   inputs: (boolean | boolean[])[],
   definition: CustomComponentDefinition,
   customComponents: Map<CustomComponentId, CustomComponentDefinition>,
-  depth: number = 0
+  depth: number = 0,
+  instancePath: string = ''
 ): (boolean | boolean[])[] {
   // Prevent infinite recursion
   if (depth > 100) {
     console.error('Maximum recursion depth exceeded in custom component evaluation')
-    return definition.circuit.outputs.map((o) => {
-      const bitWidth = o.bitWidth ?? 1
-      return bitWidth === 1 ? false : new Array(bitWidth).fill(false)
-    })
+    return definition.circuit.outputs.map((o) => createDefaultValue(o.bitWidth ?? 1))
   }
 
   // Build internal circuit with input values
@@ -59,17 +80,14 @@ function evaluateCustomComponent(
   // Compile and evaluate
   const netlist = compile(internalCircuit, customComponents)
   if (!netlist.valid) {
-    return definition.circuit.outputs.map((o) => {
-      const bitWidth = o.bitWidth ?? 1
-      return bitWidth === 1 ? false : new Array(bitWidth).fill(false)
-    })
+    return definition.circuit.outputs.map((o) => createDefaultValue(o.bitWidth ?? 1))
   }
 
   const internalInputs = new Map<InputId, boolean | boolean[]>(
     definition.circuit.inputs.map((pin, i) => [pin.id, inputs[i] ?? false])
   )
 
-  const outputValues = evaluate(netlist, internalInputs, customComponents, depth + 1)
+  const outputValues = evaluate(netlist, internalInputs, customComponents, depth + 1, instancePath)
 
   // Return outputs in order
   return [...definition.circuit.outputs]
@@ -77,8 +95,7 @@ function evaluateCustomComponent(
     .map((pin) => {
       const value = outputValues.get(pin.id as OutputId)
       if (value !== undefined) return value
-      const bitWidth = pin.bitWidth ?? 1
-      return bitWidth === 1 ? false : new Array(bitWidth).fill(false)
+      return createDefaultValue(pin.bitWidth ?? 1)
     })
 }
 
@@ -86,7 +103,8 @@ export function evaluate(
   netlist: Netlist,
   inputValues: Map<InputId, boolean | boolean[]>,
   customComponents?: Map<CustomComponentId, CustomComponentDefinition>,
-  depth: number = 0
+  depth: number = 0,
+  instancePath: string = ''
 ): Map<OutputId, boolean | boolean[]> {
   if (!netlist.valid) {
     return new Map()
@@ -94,7 +112,7 @@ export function evaluate(
 
   // Reset all net values
   for (const net of netlist.nets) {
-    net.value = net.bitWidth === 1 ? false : new Array(net.bitWidth).fill(false)
+    net.value = createDefaultValue(net.bitWidth)
   }
 
   // Set input net values
@@ -126,7 +144,49 @@ export function evaluate(
     })
 
     if (isPrimitiveGate(comp.type)) {
-      if (comp.type === 'SPLIT_MERGE') {
+      if (comp.type === 'SR_LATCH') {
+        const s = inputVals[0] ?? false
+        const r = inputVals[1] ?? false
+
+        const stateKey = instancePath ? `${instancePath}/${comp.id}` : String(comp.id)
+        let prev = latchStates.get(stateKey)
+        if (!prev) {
+          prev = { q: false }
+          latchStates.set(stateKey, prev)
+        }
+
+        let q: boolean
+        let qBar: boolean
+
+        if (s && r) {
+          // Invalid: output 0,0 but don't update stored state
+          q = false
+          qBar = false
+        } else if (s) {
+          q = true
+          qBar = false
+          prev.q = true
+        } else if (r) {
+          q = false
+          qBar = true
+          prev.q = false
+        } else {
+          // Hold
+          q = prev.q
+          qBar = !prev.q
+        }
+
+        const qNetId = comp.outputNetIds[0]
+        if (qNetId !== undefined) {
+          const qNet = netlist.nets[qNetId]
+          if (qNet) qNet.value = q
+        }
+        const qBarNetId = comp.outputNetIds[1]
+        if (qBarNetId !== undefined) {
+          const qBarNet = netlist.nets[qBarNetId]
+          if (qBarNet) qBarNet.value = qBar
+        }
+      } else if (comp.type === 'SPLIT_MERGE') {
         const config = comp.splitMergeConfig
         if (!config) {
           continue
@@ -192,13 +252,14 @@ export function evaluate(
           const net = netlist.nets[netId]
           return net?.value ?? false
         })
-        const outputVals = evaluateCustomComponent(rawInputVals, customDef, customComponents!, depth)
+        const compPath = instancePath ? `${instancePath}/${comp.id}` : String(comp.id)
+        const outputVals = evaluateCustomComponent(rawInputVals, customDef, customComponents!, depth, compPath)
 
         // Set all output net values
         comp.outputNetIds.forEach((netId, i) => {
           const net = netlist.nets[netId]
           if (net) {
-            net.value = outputVals[i] ?? (net.bitWidth === 1 ? false : new Array(net.bitWidth).fill(false))
+            net.value = outputVals[i] ?? createDefaultValue(net.bitWidth)
           }
         })
       }

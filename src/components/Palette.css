@@ -30,7 +30,6 @@
 
 .palette-section-custom {
   min-height: 0;
-  overflow: hidden;
 }
 
 .palette-custom-list {
@@ -38,7 +37,11 @@
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
-  padding-right: 2px;
+  overflow-x: hidden;
+  padding-top: 6px;
+  padding-right: 8px;
+  margin-top: -6px;
+  margin-right: -8px;
 }
 
 .palette-custom-list::-webkit-scrollbar {
@@ -115,11 +118,9 @@
   position: relative;
 }
 
-.palette-item.custom.is-editing {
-  outline: 2px solid #fbbf24;
-  outline-offset: 2px;
-  border-radius: 6px;
-  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35);
+.palette-item.custom.is-editing .gate-icon {
+  border-color: #fbbf24;
+  box-shadow: inset 0 0 0 1px #fbbf24, 0 0 0 1px rgba(251, 191, 36, 0.35);
 }
 
 .palette-item.custom .custom-actions {

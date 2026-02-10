@@ -1,7 +1,9 @@
-import { useEffect } from 'react'
+import { useCallback } from 'react'
 import { useStore } from '../store'
 import type { CustomComponentId } from '../types'
 import { buildDependencyTree } from '../utils/componentDependencies'
+import { DependencyWarning } from './DependencyWarning'
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard'
 import './CreateComponentDialog.css'
 
 interface Props {
@@ -17,21 +19,14 @@ export function DeleteComponentDialog({ isOpen, componentId, onClose }: Props) {
   const component = componentId ? customComponents.get(componentId) : null
   const dependencyInfo = componentId ? buildDependencyTree(componentId, customComponents) : null
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
-      } else if (e.key === 'Enter') {
-        if (componentId) {
-          deleteCustomComponent(componentId)
-          onClose()
-        }
-      }
+  const handleConfirm = useCallback(() => {
+    if (componentId) {
+      deleteCustomComponent(componentId)
+      onClose()
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [componentId, deleteCustomComponent, isOpen, onClose])
+  }, [componentId, deleteCustomComponent, onClose])
+
+  useDialogKeyboard(isOpen, onClose, handleConfirm)
 
   if (!isOpen || !component) return null
 
@@ -46,29 +41,11 @@ export function DeleteComponentDialog({ isOpen, componentId, onClose }: Props) {
         <h2>Delete Component</h2>
         <p className="dialog-subtitle">{component.name}</p>
 
-        {dependencyInfo && dependencyInfo.total > 0 && (
-          <div className="dialog-warning">
-            <p>
-              This component is used by {dependencyInfo.total} custom component
-              {dependencyInfo.total > 1 ? 's' : ''}:
-            </p>
-            <div className="dialog-warning-tree">
-              {dependencyInfo.lines.map((line, index) => (
-                <div key={`${line.prefix}${line.name}-${index}`} className="dialog-warning-line">
-                  <span className="dialog-warning-prefix">{line.prefix}</span>
-                  <span
-                    className={line.isTarget ? 'dialog-warning-target' : undefined}
-                  >
-                    {line.name}
-                  </span>
-                  {line.note && !line.isTarget && (
-                    <span className="dialog-warning-note">({line.note})</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p>Deleting it will break those definitions.</p>
-          </div>
+        {dependencyInfo && (
+          <DependencyWarning
+            dependencyInfo={dependencyInfo}
+            message="Deleting it will break those definitions."
+          />
         )}
 
         <div className="dialog-buttons">

@@ -257,8 +257,7 @@ function simplifyPath(path: Point[]): Point[] {
   if (path.length <= 2) return path
 
   const firstPoint = path[0]
-  const lastPoint = path[path.length - 1]
-  if (!firstPoint || !lastPoint) return path
+  if (!firstPoint) return path
 
   const simplified: Point[] = [firstPoint]
 
@@ -268,6 +267,9 @@ function simplifyPath(path: Point[]): Point[] {
     const next = path[i + 1]
 
     if (!prev || !curr || !next) continue
+
+    // Skip duplicate points
+    if (prev.x === curr.x && prev.y === curr.y) continue
 
     // Check if prev, curr, next are collinear
     const dx1 = curr.x - prev.x
@@ -285,7 +287,15 @@ function simplifyPath(path: Point[]): Point[] {
     }
   }
 
-  simplified.push(lastPoint)
+  // Always add the last point, unless it's a duplicate
+  const lastPoint = path[path.length - 1]
+  if (lastPoint) {
+    const lastSimplified = simplified[simplified.length - 1]
+    if (!lastSimplified || lastSimplified.x !== lastPoint.x || lastSimplified.y !== lastPoint.y) {
+      simplified.push(lastPoint)
+    }
+  }
+
   return simplified
 }
 

@@ -53,15 +53,62 @@ import { createCustomComponentId } from '../types/circuit'
 import { validateCircuitForComponent } from '../utils/validation'
 import { computePinLayout } from '../utils/pinLayout'
 import { getComponentDefinition } from '../simulation/compiler'
+import { resetLatchStates, removeLatchState } from '../simulation/evaluator'
 import { createDefaultSplitMergeConfig, normalizeSplitMergeConfig } from '../types'
 import type { UIState, Viewport, PinRef, DragState, HoveredButton, ContextMenuState } from '../types/ui'
 import { initialUIState } from '../types/ui'
 
+// === L-Shape Recalculation Helper ===
+function recalculateLShapeWaypoints(
+  wire: Wire,
+  initial: InitialWireState,
+  circuit: Circuit,
+  customComponents: Map<CustomComponentId, CustomComponentDefinition>
+): void {
+  const { xRatio, anchorX, anchorY, isSourceEnd, remainingWaypoints } = initial
+
+  // Get the new position of the moving end
+  const movingEnd = isSourceEnd
+    ? getWireEndpointWorld(wire.source, circuit, customComponents)
+    : getWireEndpointWorld(wire.target, circuit, customComponents)
+  if (!movingEnd) return
+
+  // Calculate new bend X using proportional ratio
+  const newBendX = snapToGrid(
+    movingEnd.x + xRatio * (anchorX - movingEnd.x),
+    GRID_STEP
+  )
+
+  // Create L-shape bends
+  const bend1 = { x: newBendX, y: movingEnd.y }   // At moving end's Y
+  const bend2 = { x: newBendX, y: anchorY }        // At anchor's Y
+
+  // Reconstruct waypoints
+  if (isSourceEnd) {
+    wire.waypoints = [bend1, bend2, ...remainingWaypoints]
+  } else {
+    wire.waypoints = [...remainingWaypoints, bend2, bend1]
+  }
+}
+
 // === ID Counters ===
 let nextComponentId = 1
 let nextWireId = 1
-let nextInputId = 2
-let nextOutputId = 2
+let nextInputId = 1
+let nextOutputId = 1
+
+function createDefaultCircuit(): Circuit {
+  return {
+    id: crypto.randomUUID(),
+    name: 'Untitled Circuit',
+    inputs: [{ id: nextInputId++ as InputId, label: 'I0', value: false, bitWidth: 1, order: 0 }],
+    outputs: [{ id: nextOutputId++ as OutputId, label: 'O0', bitWidth: 1, order: 0 }],
+    components: [],
+    wires: [],
+    inputBoard: { x: -360, y: 0 },
+    outputBoard: { x: 360, y: 0 },
+  }
+}
 
 const STORAGE_KEY = 'logic-gate-custom-components'
 
@@ -139,22 +186,10 @@ interface AppState {
   hideContextMenu: () => void
 }
 
-// === Initial Circuit State ===
-const initialCircuit: Circuit = {
-  id: crypto.randomUUID(),
-  name: 'Untitled Circuit',
-  inputs: [{ id: 1 as InputId, label: 'I0', value: false, bitWidth: 1, order: 0 }],
-  outputs: [{ id: 1 as OutputId, label: 'O0', bitWidth: 1, order: 0 }],
-  components: [],
-  wires: [],
-  inputBoard: { x: -360, y: 0 },
-  outputBoard: { x: 360, y: 0 },
-}
-
 // === Store Implementation ===
 export const useStore = create<AppState>()(
   immer((set, get) => ({
-    circuit: initialCircuit,
+    circuit: createDefaultCircuit(),
     ui: initialUIState,
     customComponents: new Map<CustomComponentId, CustomComponentDefinition>(),
     editingCustomComponentId: null,
@@ -185,6 +220,7 @@ export const useStore = create<AppState>()(
         )
         state.ui.selection.components.delete(id)
       })
+      removeLatchState(id)
     },
 
     moveComponent: (id, x, y, initialWireState) => {
@@ -223,30 +259,7 @@ export const useStore = create<AppState>()(
               }
 
               // L-shape recalculation mode: only one end moving
-              const { xRatio, anchorX, anchorY, isSourceEnd, remainingWaypoints } = initial
-
-              // Get the new position of the moving end
-              const movingEnd = isSourceEnd
-                ? getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
-                : getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
-              if (!movingEnd) continue
-
-              // Calculate new bend X using proportional ratio
-              const newBendX = snapToGrid(
-                movingEnd.x + xRatio * (anchorX - movingEnd.x),
-                GRID_STEP
-              )
-
-              // Create L-shape bends
-              const bend1 = { x: newBendX, y: movingEnd.y }   // At moving end's Y
-              const bend2 = { x: newBendX, y: anchorY }        // At anchor's Y
-
-              // Reconstruct waypoints
-              if (isSourceEnd) {
-                wire.waypoints = [bend1, bend2, ...remainingWaypoints]
-              } else {
-                wire.waypoints = [...remainingWaypoints, bend2, bend1]
-              }
+              recalculateLShapeWaypoints(wire, initial, state.circuit, state.customComponents)
             }
           }
 
@@ -519,28 +532,7 @@ export const useStore = create<AppState>()(
             const initial = initialStateMap.get(wire.id)
             if (!initial) continue
 
-            const { xRatio, anchorX, anchorY, isSourceEnd, remainingWaypoints } = initial
-
-            // Get the new position of the moving end (input board pins are always sources)
-            const movingEnd = getWireEndpointWorld(wire.source, state.circuit, state.customComponents)
-            if (!movingEnd) continue
-
-            // Calculate new bend X using proportional ratio
-            const newBendX = snapToGrid(
-              movingEnd.x + xRatio * (anchorX - movingEnd.x),
-              GRID_STEP
-            )
-
-            // Create L-shape bends
-            const bend1 = { x: newBendX, y: movingEnd.y }   // At moving end's Y
-            const bend2 = { x: newBendX, y: anchorY }        // At anchor's Y
-
-            // Reconstruct waypoints (input board is always source end)
-            if (isSourceEnd) {
-              wire.waypoints = [bend1, bend2, ...remainingWaypoints]
-            } else {
-              wire.waypoints = [...remainingWaypoints, bend2, bend1]
-            }
+            recalculateLShapeWaypoints(wire, initial, state.circuit, state.customComponents)
           }
         }
 
@@ -563,28 +555,7 @@ export const useStore = create<AppState>()(
             const initial = initialStateMap.get(wire.id)
             if (!initial) continue
 
-            const { xRatio, anchorX, anchorY, isSourceEnd, remainingWaypoints } = initial
-
-            // Get the new position of the moving end (output board pins are always targets)
-            const movingEnd = getWireEndpointWorld(wire.target, state.circuit, state.customComponents)
-            if (!movingEnd) continue
-
-            // Calculate new bend X using proportional ratio
-            const newBendX = snapToGrid(
-              movingEnd.x + xRatio * (anchorX - movingEnd.x),
-              GRID_STEP
-            )
-
-            // Create L-shape bends
-            const bend1 = { x: newBendX, y: movingEnd.y }   // At moving end's Y
-            const bend2 = { x: newBendX, y: anchorY }        // At anchor's Y
-
-            // Reconstruct waypoints (output board is always target end)
-            if (isSourceEnd) {
-              wire.waypoints = [bend1, bend2, ...remainingWaypoints]
-            } else {
-              wire.waypoints = [...remainingWaypoints, bend2, bend1]
-            }
+            recalculateLShapeWaypoints(wire, initial, state.circuit, state.customComponents)
           }
         }
 
@@ -681,16 +652,7 @@ export const useStore = create<AppState>()(
         state.customComponents.set(id, definition)
 
         // Reset the circuit to initial state
-        state.circuit = {
-          id: crypto.randomUUID(),
-          name: 'Untitled Circuit',
-          inputs: [{ id: nextInputId++ as InputId, label: 'I0', value: false, bitWidth: 1, order: 0 }],
-          outputs: [{ id: nextOutputId++ as OutputId, label: 'O0', bitWidth: 1, order: 0 }],
-          components: [],
-          wires: [],
-          inputBoard: { x: -360, y: 0 },
-          outputBoard: { x: 360, y: 0 },
-        }
+        state.circuit = createDefaultCircuit()
 
         state.editingCustomComponentId = null
 
@@ -699,6 +661,7 @@ export const useStore = create<AppState>()(
         state.ui.selection.wires.clear()
       })
       clearPathCache()
+      resetLatchStates()
 
       // Persist to localStorage
       get().saveCustomComponents()
@@ -802,6 +765,7 @@ export const useStore = create<AppState>()(
         }
       })
       clearPathCache()
+      resetLatchStates()
 
       return true
     },

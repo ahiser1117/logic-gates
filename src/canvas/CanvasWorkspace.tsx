@@ -5,9 +5,9 @@ import { renderFrame } from './renderer'
 import { hitTest } from './hitTest'
 import { screenToWorld, worldToScreen, snapToGrid } from './grid'
 import { getComponentDefinition } from '../simulation'
-import type { ComponentType, ComponentId, InputId, OutputId, WireId, Point } from '../types'
+import type { ComponentType, ComponentId, InputId, OutputId, WireId, Point, Wire, Circuit, CustomComponentId, CustomComponentDefinition } from '../types'
 import { SplitMergeContextMenu } from '../components/SplitMergeContextMenu'
-import { computeWirePath, getWireEndpointWorld, GRID_STEP } from './wirePathfinding'
+import { computeWirePath, getWireEndpointWorld, GRID_STEP, simplifyPath } from './wirePathfinding'
 import { BitWidthContextMenu } from '../components/BitWidthContextMenu'
 import { getInputBoardWidth, PIN_START_Y, PIN_SPACING } from './boardLayout'
 import './CanvasWorkspace.css'
@@ -16,70 +16,29 @@ const GRID_SIZE = 20
 const WAYPOINT_HIT_RADIUS = 12 // World units for detecting clicks on waypoints
 
 /**
- * Simplify a path by removing collinear points and duplicate points.
- * Keeps only the corner points where direction changes.
- * Works on the full path (including pin positions).
- */
-function simplifyPath(path: Point[]): Point[] {
-  if (path.length <= 2) return path
-
-  const firstPoint = path[0]
-  if (!firstPoint) return path
-
-  const simplified: Point[] = [firstPoint]
-
-  for (let i = 1; i < path.length - 1; i++) {
-    const prev = simplified[simplified.length - 1]
-    const curr = path[i]
-    const next = path[i + 1]
-
-    if (!prev || !curr || !next) continue
-
-    // Skip if current point is same as previous (duplicate)
-    if (prev.x === curr.x && prev.y === curr.y) continue
-
-    // Check if prev, curr, next are collinear
-    const dx1 = curr.x - prev.x
-    const dy1 = curr.y - prev.y
-    const dx2 = next.x - curr.x
-    const dy2 = next.y - curr.y
-
-    // Points are collinear if both segments are in the same direction
-    // (both horizontal or both vertical)
-    const prevToCurrentHorizontal = dy1 === 0
-    const currentToNextHorizontal = dy2 === 0
-    const prevToCurrentVertical = dx1 === 0
-    const currentToNextVertical = dx2 === 0
-
-    const isCollinear =
-      (prevToCurrentHorizontal && currentToNextHorizontal) ||
-      (prevToCurrentVertical && currentToNextVertical)
-
-    // Keep the point if it's a corner (not collinear)
-    if (!isCollinear) {
-      simplified.push(curr)
-    }
-  }
-
-  // Always add the last point
-  const lastPoint = path[path.length - 1]
-  if (lastPoint) {
-    const lastSimplified = simplified[simplified.length - 1]
-    // Don't add if it's a duplicate
-    if (!lastSimplified || lastSimplified.x !== lastPoint.x || lastSimplified.y !== lastPoint.y) {
-      simplified.push(lastPoint)
-    }
-  }
-
-  return simplified
-}
-
-/**
  * Extract waypoints from a full path by removing the first and last points (pins).
  */
 function pathToWaypoints(path: Point[]): Point[] {
   if (path.length <= 2) return []
   return path.slice(1, -1)
+}
+
+function simplifyWireWaypoints(
+  wire: Wire,
+  circuit: Circuit,
+  customComponents: Map<CustomComponentId, CustomComponentDefinition> | undefined,
+  updateFn: (id: WireId, waypoints: Point[]) => void
+): void {
+  const fullPath = computeWirePath(wire, circuit, customComponents)
+  const simplifiedPath = simplifyPath(fullPath)
+  const newWaypoints = pathToWaypoints(simplifiedPath)
+
+  const currentWaypoints = wire.waypoints || []
+  if (newWaypoints.length !== currentWaypoints.length ||
+      newWaypoints.some((wp, i) =>
+        wp.x !== currentWaypoints[i]?.x || wp.y !== currentWaypoints[i]?.y)) {
+    updateFn(wire.id, newWaypoints)
+  }
 }
 
 interface LabelEdit {
@@ -1004,26 +963,12 @@ export function CanvasWorkspace() {
         const { wireId } = wireHandleDragStart.current
         const wire = circuit.wires.find((w) => w.id === wireId)
         if (wire) {
-          // Get the full path (including pin positions)
-          const fullPath = computeWirePath(wire, circuit, customComponents)
-          // Simplify the full path to remove collinear points
-          const simplifiedPath = simplifyPath(fullPath)
-          // Extract waypoints (remove first and last which are pin positions)
-          const newWaypoints = pathToWaypoints(simplifiedPath)
-
-          // Update if waypoints changed
-          const currentWaypoints = wire.waypoints || []
-          if (newWaypoints.length !== currentWaypoints.length ||
-              newWaypoints.some((wp, i) =>
-                wp.x !== currentWaypoints[i]?.x || wp.y !== currentWaypoints[i]?.y)) {
-            updateWireWaypoints(wireId, newWaypoints)
-          }
+          simplifyWireWaypoints(wire, circuit, customComponents, updateWireWaypoints)
         }
       }
 
       // Simplify wire paths after component drag
       if (ui.drag.type === 'component' && dragStartPositions.current.size > 0) {
-        // Find all wires connected to dragged components that have custom waypoints
         const draggedComponentIds = new Set(dragStartPositions.current.keys())
         for (const wire of circuit.wires) {
           if (!wire.waypoints || wire.waypoints.length === 0) continue
@@ -1032,16 +977,7 @@ export function CanvasWorkspace() {
           const isTargetConnected = wire.target.type === 'component' && draggedComponentIds.has(wire.target.componentId)
 
           if (isSourceConnected || isTargetConnected) {
-            const fullPath = computeWirePath(wire, circuit, customComponents)
-            const simplifiedPath = simplifyPath(fullPath)
-            const newWaypoints = pathToWaypoints(simplifiedPath)
-
-            const currentWaypoints = wire.waypoints || []
-            if (newWaypoints.length !== currentWaypoints.length ||
-                newWaypoints.some((wp, i) =>
-                  wp.x !== currentWaypoints[i]?.x || wp.y !== currentWaypoints[i]?.y)) {
-              updateWireWaypoints(wire.id, newWaypoints)
-            }
+            simplifyWireWaypoints(wire, circuit, customComponents, updateWireWaypoints)
           }
         }
       }
@@ -1057,16 +993,7 @@ export function CanvasWorkspace() {
             (boardType === 'output' && wire.target.type === 'output')
 
           if (isConnected) {
-            const fullPath = computeWirePath(wire, circuit, customComponents)
-            const simplifiedPath = simplifyPath(fullPath)
-            const newWaypoints = pathToWaypoints(simplifiedPath)
-
-            const currentWaypoints = wire.waypoints || []
-            if (newWaypoints.length !== currentWaypoints.length ||
-                newWaypoints.some((wp, i) =>
-                  wp.x !== currentWaypoints[i]?.x || wp.y !== currentWaypoints[i]?.y)) {
-              updateWireWaypoints(wire.id, newWaypoints)
-            }
+            simplifyWireWaypoints(wire, circuit, customComponents, updateWireWaypoints)
           }
         }
       }
@@ -1263,9 +1190,27 @@ export function CanvasWorkspace() {
     [ui.viewport, addComponent, resetDrag]
   )
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-  }
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      setDrag({ currentX: x, currentY: y })
+    },
+    [setDrag]
+  )
+
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      // Only fire when leaving the container, not when entering children
+      if (e.currentTarget.contains(e.relatedTarget as Node)) return
+      setDrag({ currentX: -9999, currentY: -9999 })
+    },
+    [setDrag]
+  )
 
   // Keyboard handler
   useEffect(() => {
@@ -1291,6 +1236,7 @@ export function CanvasWorkspace() {
       className="canvas-container"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
     >
       <canvas
         ref={canvasRef}

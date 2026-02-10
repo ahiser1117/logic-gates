@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store'
 import type { ImportResolution, ConflictChoice } from '../utils/componentFile'
 import { prepareImport } from '../utils/componentFile'
 import type { CustomComponentId } from '../types'
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard'
 import './CreateComponentDialog.css'
 
 interface Props {
@@ -37,27 +38,16 @@ export function ImportComponentDialog({ isOpen, resolution, error, onDone, onClo
       )
     : false
 
-  const handleImport = () => {
+  const handleImport = useCallback(() => {
     if (!resolution) return
     const plan = prepareImport(resolution, conflictChoices, customComponents)
     if (plan.toInsert.length > 0 || plan.toRemove.length > 0 || plan.toUpdate.length > 0) {
       importComponents(plan.toInsert, plan.toRemove, plan.toUpdate)
     }
     onDone()
-  }
+  }, [resolution, conflictChoices, customComponents, importComponents, onDone])
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
-      } else if (e.key === 'Enter' && hasImportableWork) {
-        handleImport()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, hasImportableWork])
+  useDialogKeyboard(isOpen, onClose, hasImportableWork ? handleImport : null)
 
   if (!isOpen) return null
 

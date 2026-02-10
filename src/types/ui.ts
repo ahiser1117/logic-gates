@@ -1,4 +1,4 @@
-import type { ComponentId, WireId, InputId, OutputId, GateType, Point } from './circuit'
+import type { ComponentId, WireId, InputId, OutputId, ComponentType, Point } from './circuit'
 
 // === Context Menu State ===
 export type ContextMenuState =
@@ -55,7 +55,7 @@ export interface DragState {
   currentX: number
   currentY: number
   payload?: {
-    gateType?: GateType
+    gateType?: ComponentType
     componentIds?: ComponentId[]
     offsetX?: number
     offsetY?: number

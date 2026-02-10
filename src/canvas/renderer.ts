@@ -1,14 +1,16 @@
 import type { Circuit, Component, Wire, CustomComponentId, CustomComponentDefinition, OutputId } from '../types'
 import type { UIState } from '../types'
 import type { SimulationResult } from '../hooks/useSimulation'
-import { drawGrid, worldToScreen } from './grid'
-import { isPrimitiveGate } from '../types'
+import { drawGrid, worldToScreen, screenToWorld, snapToGrid, GRID_SIZE } from './grid'
+import { isPrimitiveGate, createDefaultSplitMergeConfig } from '../types'
+import type { ComponentType } from '../types'
 import { getComponentDefinition } from '../simulation'
 import {
   computeWirePath,
   computePreviewPathWithWaypoints,
   type Point,
 } from './wirePathfinding'
+import { getSegmentMidpoint, isSegmentHorizontal } from './hitTest'
 import {
   getInputBoardWidth,
   getOutputBoardWidth,
@@ -42,6 +44,20 @@ function getFirstBit(value: boolean | boolean[]): boolean {
 }
 
 
+
+function buildCanvasPath(ctx: CanvasRenderingContext2D, path: Point[], viewport: { panX: number; panY: number; zoom: number }) {
+  const firstPoint = path[0]
+  if (!firstPoint) return
+  ctx.beginPath()
+  const startScreen = worldToScreen(firstPoint.x, firstPoint.y, viewport)
+  ctx.moveTo(startScreen.x, startScreen.y)
+  for (let i = 1; i < path.length; i++) {
+    const pt = path[i]
+    if (!pt) continue
+    const screen = worldToScreen(pt.x, pt.y, viewport)
+    ctx.lineTo(screen.x, screen.y)
+  }
+}
 
 const COLORS = {
   gate: '#1e3a5f',
@@ -151,6 +167,11 @@ export function renderFrame(
   if (ui.drag.type === 'marquee') {
     drawMarquee(ctx, ui)
   }
+
+  // Draw ghost component during palette drag
+  if (ui.drag.type === 'palette' && ui.drag.payload?.gateType && ui.drag.currentX > -9000) {
+    drawGhostComponent(ctx, ui, ui.drag.payload.gateType, customComponents)
+  }
 }
 
 function drawComponent(
@@ -199,6 +220,8 @@ function drawComponent(
   let label: string
   if (component.type === 'SPLIT_MERGE') {
     label = component.splitMerge?.mode === 'merge' ? 'MERGE' : 'SPLIT'
+  } else if (component.type === 'SR_LATCH') {
+    label = 'SR'
   } else if (isCustom) {
     const customDef = customComponents?.get(component.type as CustomComponentId)
     label = customDef?.name ?? '?'
@@ -248,9 +271,9 @@ function drawComponent(
     }
 
     // Draw pin label tooltip for custom components on hover
-    if ((isCustom || component.type === 'SPLIT_MERGE') && isHovered) {
+    if ((isCustom || component.type === 'SPLIT_MERGE' || component.type === 'SR_LATCH') && isHovered) {
       ctx.fillStyle = '#1e293b'
-      ctx.strokeStyle = component.type === 'SPLIT_MERGE' ? COLORS.gateBorder : COLORS.customGateBorder
+      ctx.strokeStyle = (component.type === 'SPLIT_MERGE' || component.type === 'SR_LATCH') ? COLORS.gateBorder : COLORS.customGateBorder
       ctx.lineWidth = 1
 
       const labelText = pin.name
@@ -290,9 +313,6 @@ function drawWire(
   const path = computeWirePath(wire, circuit, customComponents)
   if (path.length < 2) return
 
-  const firstPoint = path[0]
-  if (!firstPoint) return
-
   const selected = ui.selection.wires.has(wire.id)
   const zoom = ui.viewport.zoom
   const hasValue = getFirstBit(signalValue)
@@ -304,19 +324,6 @@ function drawWire(
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  // Build the path once
-  const buildPath = () => {
-    ctx.beginPath()
-    const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
-    ctx.moveTo(startScreen.x, startScreen.y)
-    for (let i = 1; i < path.length; i++) {
-      const pt = path[i]
-      if (!pt) continue
-      const screen = worldToScreen(pt.x, pt.y, ui.viewport)
-      ctx.lineTo(screen.x, screen.y)
-    }
-  }
-
   // Draw border (thicker, darker) - constant world size
   ctx.strokeStyle = selected
     ? COLORS.wireSelectedBorder
@@ -324,13 +331,13 @@ function drawWire(
       ? COLORS.wireOnBorder
       : COLORS.wireOffBorder
   ctx.lineWidth = (selected ? 6 : 5) * baseThickness * zoom
-  buildPath()
+  buildCanvasPath(ctx, path, ui.viewport)
   ctx.stroke()
 
   // Draw main wire on top - constant world size
   ctx.strokeStyle = selected ? COLORS.wireSelected : hasValue ? COLORS.wireOn : COLORS.wireOff
   ctx.lineWidth = (selected ? 4 : 3) * baseThickness * zoom
-  buildPath()
+  buildCanvasPath(ctx, path, ui.viewport)
   ctx.stroke()
 }
 
@@ -359,19 +366,15 @@ function drawWireHandles(
       const p2 = path[i + 1]
       if (!p1 || !p2) continue
 
-      // Calculate midpoint
-      const midX = (p1.x + p2.x) / 2
-      const midY = (p1.y + p2.y) / 2
-
-      // Determine if segment is horizontal or vertical
-      const isHorizontal = Math.abs(p2.y - p1.y) < Math.abs(p2.x - p1.x)
+      const mid = getSegmentMidpoint(p1, p2)
+      const isHorizontal = isSegmentHorizontal(p1, p2)
 
       // Handle dimensions based on orientation
       const handleW = (isHorizontal ? HANDLE_WIDTH : HANDLE_HEIGHT) * zoom
       const handleH = (isHorizontal ? HANDLE_HEIGHT : HANDLE_WIDTH) * zoom
 
       // Convert to screen coordinates
-      const screen = worldToScreen(midX, midY, ui.viewport)
+      const screen = worldToScreen(mid.x, mid.y, ui.viewport)
 
       // Draw capsule (rounded rectangle)
       ctx.fillStyle = COLORS.handleFill
@@ -461,39 +464,23 @@ function drawWiringPreview(
 
   if (path.length < 2) return
 
-  const firstPoint = path[0]
-  if (!firstPoint) return
-
   const zoom = ui.viewport.zoom
 
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  // Build the path once
-  const buildPath = () => {
-    ctx.beginPath()
-    const startScreen = worldToScreen(firstPoint.x, firstPoint.y, ui.viewport)
-    ctx.moveTo(startScreen.x, startScreen.y)
-    for (let i = 1; i < path.length; i++) {
-      const pt = path[i]
-      if (!pt) continue
-      const screen = worldToScreen(pt.x, pt.y, ui.viewport)
-      ctx.lineTo(screen.x, screen.y)
-    }
-  }
-
   // Draw border - constant world size
   ctx.strokeStyle = '#1e3a5f'
   ctx.lineWidth = 5 * zoom
   ctx.setLineDash([])
-  buildPath()
+  buildCanvasPath(ctx, path, ui.viewport)
   ctx.stroke()
 
   // Draw main preview line (dashed) - constant world size
   ctx.strokeStyle = '#60a5fa'
   ctx.lineWidth = 3 * zoom
   ctx.setLineDash([5 * zoom, 5 * zoom])
-  buildPath()
+  buildCanvasPath(ctx, path, ui.viewport)
   ctx.stroke()
 
   ctx.setLineDash([])
@@ -948,6 +935,96 @@ function drawOutputBoard(
       }
     }
   }
+}
+
+function drawGhostComponent(
+  ctx: CanvasRenderingContext2D,
+  ui: UIState,
+  componentType: ComponentType,
+  customComponents?: Map<CustomComponentId, CustomComponentDefinition>
+) {
+  // Build a minimal pseudo-component to get its definition
+  const pseudoComponent = componentType === 'SPLIT_MERGE'
+    ? { type: componentType, splitMerge: createDefaultSplitMergeConfig() } as any
+    : { type: componentType } as any
+
+  const def = getComponentDefinition(componentType, customComponents, pseudoComponent)
+  if (!def) return
+
+  const isCustom = !isPrimitiveGate(componentType)
+
+  // Convert screen drag position to world, snap to grid
+  const world = screenToWorld(ui.drag.currentX, ui.drag.currentY, ui.viewport)
+  const snappedX = snapToGrid(world.x, GRID_SIZE)
+  const snappedY = snapToGrid(world.y, GRID_SIZE)
+
+  const screen = worldToScreen(snappedX, snappedY, ui.viewport)
+  const scale = ui.viewport.zoom
+  const w = def.width * scale
+  const h = def.height * scale
+
+  ctx.save()
+  ctx.globalAlpha = 0.5
+
+  // Draw body
+  if (componentType === 'SPLIT_MERGE') {
+    ctx.fillStyle = '#1e40af'
+    ctx.strokeStyle = '#93c5fd'
+  } else if (isCustom) {
+    ctx.fillStyle = COLORS.customGate
+    ctx.strokeStyle = COLORS.customGateBorder
+  } else {
+    ctx.fillStyle = COLORS.gate
+    ctx.strokeStyle = COLORS.gateBorder
+  }
+  ctx.lineWidth = 2
+
+  ctx.beginPath()
+  ctx.roundRect(screen.x - w / 2, screen.y - h / 2, w, h, 4 * scale)
+  ctx.fill()
+  ctx.stroke()
+
+  // Draw label
+  ctx.fillStyle = COLORS.gateText
+  const fontSize = componentType === 'SPLIT_MERGE' ? 9 : 12
+  ctx.font = `bold ${fontSize * scale}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+
+  let label: string
+  if (componentType === 'SPLIT_MERGE') {
+    label = 'SPLIT'
+  } else if (componentType === 'SR_LATCH') {
+    label = 'SR'
+  } else if (isCustom) {
+    const customDef = customComponents?.get(componentType as CustomComponentId)
+    label = customDef?.name ?? '?'
+  } else {
+    label = componentType
+  }
+
+  const pinRadius = 8 * scale
+  const maxWidth = w - 2 * pinRadius - 4 * scale
+  const lines = wrapText(ctx, label, maxWidth)
+  const lineHeight = 14 * scale
+  const totalHeight = lines.length * lineHeight
+  const startY = screen.y - totalHeight / 2 + lineHeight / 2
+  lines.forEach((line, i) => {
+    ctx.fillText(line, screen.x, startY + i * lineHeight)
+  })
+
+  // Draw pins
+  for (const pin of def.pins) {
+    const pinX = screen.x + pin.offsetX * scale
+    const pinY = screen.y + pin.offsetY * scale
+
+    ctx.beginPath()
+    ctx.arc(pinX, pinY, pinRadius, 0, Math.PI * 2)
+    ctx.fillStyle = COLORS.boardPin
+    ctx.fill()
+  }
+
+  ctx.restore()
 }
 
 function drawMarquee(ctx: CanvasRenderingContext2D, ui: UIState) {

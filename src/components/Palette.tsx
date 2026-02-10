@@ -14,9 +14,15 @@ import {
 import type { ImportResolution } from '../utils/componentFile'
 import './Palette.css'
 
+// 1x1 transparent image to suppress browser drag ghost
+const emptyDragImage = document.createElement('canvas')
+emptyDragImage.width = 1
+emptyDragImage.height = 1
+
 const GATES: { type: GateType; label: string }[] = [
   { type: 'NAND', label: 'NAND' },
   { type: 'NOR', label: 'NOR' },
+  { type: 'SR_LATCH', label: 'SR Latch' },
   { type: 'SPLIT_MERGE', label: 'Split/Merge' },
 ]
 
@@ -36,6 +42,7 @@ export function Palette() {
   const editingCustomComponentId = useStore((s) => s.editingCustomComponentId)
 
   const handleDragStart = (e: React.DragEvent, componentType: ComponentType) => {
+    e.dataTransfer.setDragImage(emptyDragImage, 0, 0)
     e.dataTransfer.setData('componentType', componentType)
     setDrag({
       type: 'palette',
