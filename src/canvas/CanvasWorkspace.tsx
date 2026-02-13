@@ -119,6 +119,7 @@ export function CanvasWorkspace() {
   const boardDragStart = useRef<{ board: 'input' | 'output'; x: number; y: number } | null>(null)
   const boardInitialWireState = useRef<InitialWireState[]>([])
   const wireHandleDragStart = useRef<{ wireId: WireId; handleIndex: number; originalPath: Point[] } | null>(null)
+  const mouseWorldPos = useRef<Point>({ x: 0, y: 0 })
   const [labelEdit, setLabelEdit] = useState<LabelEdit | null>(null)
   const [multiBitEdit, setMultiBitEdit] = useState<MultiBitEdit | null>(null)
   const labelInputRef = useRef<HTMLInputElement>(null)
@@ -164,6 +165,9 @@ export function CanvasWorkspace() {
   const pushUndo = useStore((s) => s.pushUndo)
   const undo = useStore((s) => s.undo)
   const redo = useStore((s) => s.redo)
+  const copySelected = useStore((s) => s.copySelected)
+  const pasteClipboard = useStore((s) => s.pasteClipboard)
+  const selectAll = useStore((s) => s.selectAll)
 
   // Focus label input when editing starts
   useEffect(() => {
@@ -680,6 +684,7 @@ export function CanvasWorkspace() {
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       const { x, y } = getScreenCoords(e)
+      mouseWorldPos.current = screenToWorld(x, y, ui.viewport)
 
       // Update hover state
       const hit = hitTest(x, y, circuit, ui.viewport, customComponents, ui.selection.wires)
@@ -1240,12 +1245,21 @@ export function CanvasWorkspace() {
       } else if (((mod && e.key === 'z' && e.shiftKey) || (mod && e.key === 'y')) && !inInput) {
         e.preventDefault()
         redo()
+      } else if (mod && e.key === 'c' && !inInput) {
+        e.preventDefault()
+        copySelected()
+      } else if (mod && e.key === 'v' && !inInput) {
+        e.preventDefault()
+        pasteClipboard(mouseWorldPos.current.x, mouseWorldPos.current.y)
+      } else if (mod && e.key === 'a' && !inInput) {
+        e.preventDefault()
+        selectAll()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [deleteSelected, cancelWiring, clearSelection, undo, redo])
+  }, [deleteSelected, cancelWiring, clearSelection, undo, redo, copySelected, pasteClipboard, selectAll])
 
   return (
     <div

@@ -97,6 +97,13 @@ let nextWireId = 1
 let nextInputId = 1
 let nextOutputId = 1
 
+// === Clipboard (module-level so undo/redo doesn't affect it) ===
+interface ClipboardData {
+  components: { type: ComponentType; x: number; y: number; splitMerge?: SplitMergeConfig }[]
+  wires: { sourceIdx: number; sourcePin: number; targetIdx: number; targetPin: number; waypoints: Point[] }[]
+}
+let clipboard: ClipboardData | null = null
+
 function createDefaultCircuit(): Circuit {
   return {
     id: crypto.randomUUID(),
@@ -175,6 +182,8 @@ interface AppState {
   clearSelection: () => void
   selectAll: () => void
   deleteSelected: () => void
+  copySelected: () => void
+  pasteClipboard: (cx: number, cy: number) => void
 
   setDrag: (drag: Partial<DragState>) => void
   resetDrag: () => void
@@ -894,6 +903,101 @@ export const useStore = create<AppState>()(
       })
       for (const id of deletedComponents) removeLatchState(id)
       for (const id of deletedWires) clearWirePath(id)
+    },
+
+    copySelected: () => {
+      const { circuit, ui } = get()
+      const selectedIds = ui.selection.components
+      if (selectedIds.size === 0) return
+
+      // Build index of selected components (preserving order)
+      const selectedComponents = circuit.components.filter((c) => selectedIds.has(c.id))
+      const idToIndex = new Map<ComponentId, number>()
+      selectedComponents.forEach((c, i) => idToIndex.set(c.id, i))
+
+      // Filter wires: only component-to-component where both ends are selected
+      const selectedWires = circuit.wires.filter(
+        (w) =>
+          w.source.type === 'component' &&
+          w.target.type === 'component' &&
+          idToIndex.has(w.source.componentId) &&
+          idToIndex.has(w.target.componentId)
+      )
+
+      clipboard = {
+        components: selectedComponents.map((c) => ({
+          type: c.type,
+          x: c.x,
+          y: c.y,
+          ...(c.splitMerge ? { splitMerge: structuredClone(c.splitMerge) } : {}),
+        })),
+        wires: selectedWires.map((w) => ({
+          sourceIdx: idToIndex.get((w.source as { type: 'component'; componentId: ComponentId }).componentId)!,
+          sourcePin: (w.source as { type: 'component'; componentId: ComponentId; pinIndex: number }).pinIndex,
+          targetIdx: idToIndex.get((w.target as { type: 'component'; componentId: ComponentId }).componentId)!,
+          targetPin: (w.target as { type: 'component'; componentId: ComponentId; pinIndex: number }).pinIndex,
+          waypoints: w.waypoints ? structuredClone(w.waypoints) : [],
+        })),
+      }
+    },
+
+    pasteClipboard: (cx, cy) => {
+      if (!clipboard || clipboard.components.length === 0) return
+
+      // Capture clipboard data and allocate IDs before entering withUndo
+      const clipComponents = clipboard.components
+      const clipWires = clipboard.wires
+      const newComponentIds: ComponentId[] = clipComponents.map(
+        () => nextComponentId++ as ComponentId
+      )
+      const newWireIds: WireId[] = clipWires.map(
+        () => nextWireId++ as WireId
+      )
+
+      // Compute center of mass of clipboard components
+      let sumX = 0, sumY = 0
+      for (const c of clipComponents) {
+        sumX += c.x
+        sumY += c.y
+      }
+      const centerX = sumX / clipComponents.length
+      const centerY = sumY / clipComponents.length
+
+      // Offset so center of mass lands at (cx, cy), snapped to grid
+      const dx = snapToGrid(cx - centerX, GRID_STEP)
+      const dy = snapToGrid(cy - centerY, GRID_STEP)
+
+      withUndo((state) => {
+        // Create components with new IDs and offset positions
+        for (let i = 0; i < clipComponents.length; i++) {
+          const src = clipComponents[i]!
+          state.circuit.components.push({
+            id: newComponentIds[i]!,
+            type: src.type,
+            x: src.x + dx,
+            y: src.y + dy,
+            ...(src.splitMerge ? { splitMerge: structuredClone(src.splitMerge) } : {}),
+          })
+        }
+
+        // Create wires with new IDs and remapped endpoints
+        for (let i = 0; i < clipWires.length; i++) {
+          const w = clipWires[i]!
+          state.circuit.wires.push({
+            id: newWireIds[i]!,
+            source: { type: 'component', componentId: newComponentIds[w.sourceIdx]!, pinIndex: w.sourcePin },
+            target: { type: 'component', componentId: newComponentIds[w.targetIdx]!, pinIndex: w.targetPin },
+            waypoints: w.waypoints.map((wp) => ({ x: wp.x + dx, y: wp.y + dy })),
+          })
+        }
+
+        // Select only pasted components
+        state.ui.selection.components.clear()
+        state.ui.selection.wires.clear()
+        for (const id of newComponentIds) {
+          state.ui.selection.components.add(id)
+        }
+      })
     },
 
     setDrag: (drag) => {
