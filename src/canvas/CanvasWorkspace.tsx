@@ -161,6 +161,9 @@ export function CanvasWorkspace() {
   const showContextMenu = useStore((s) => s.showContextMenu)
   const hideContextMenu = useStore((s) => s.hideContextMenu)
   const setInputValue = useStore((s) => s.setInputValue)
+  const pushUndo = useStore((s) => s.pushUndo)
+  const undo = useStore((s) => s.undo)
+  const redo = useStore((s) => s.redo)
 
   // Focus label input when editing starts
   useEffect(() => {
@@ -327,6 +330,7 @@ export function CanvasWorkspace() {
         // Handle board dragging
         if (hit.type === 'input-board') {
           const world = screenToWorld(x, y, ui.viewport)
+          pushUndo()
           boardDragStart.current = {
             board: 'input',
             x: circuit.inputBoard.x,
@@ -387,6 +391,7 @@ export function CanvasWorkspace() {
 
         if (hit.type === 'output-board') {
           const world = screenToWorld(x, y, ui.viewport)
+          pushUndo()
           boardDragStart.current = {
             board: 'output',
             x: circuit.outputBoard.x,
@@ -594,6 +599,7 @@ export function CanvasWorkspace() {
             }
           }
 
+          pushUndo()
           const world = screenToWorld(x, y, ui.viewport)
           setDrag({
             type: 'component',
@@ -616,6 +622,7 @@ export function CanvasWorkspace() {
               originalPath: originalPath,
             }
 
+            pushUndo()
             const world = screenToWorld(x, y, ui.viewport)
             setDrag({
               type: 'wireHandle',
@@ -666,6 +673,7 @@ export function CanvasWorkspace() {
       toggleInput,
       removeInput,
       removeOutput,
+      pushUndo,
     ]
   )
 
@@ -1215,20 +1223,29 @@ export function CanvasWorkspace() {
   // Keyboard handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      const inInput = document.activeElement?.tagName === 'INPUT'
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (document.activeElement?.tagName !== 'INPUT') {
+        if (!inInput) {
           e.preventDefault()
           deleteSelected()
         }
       } else if (e.key === 'Escape') {
         cancelWiring()
         clearSelection()
+      } else if (mod && e.key === 'z' && !e.shiftKey && !inInput) {
+        e.preventDefault()
+        undo()
+      } else if (((mod && e.key === 'z' && e.shiftKey) || (mod && e.key === 'y')) && !inInput) {
+        e.preventDefault()
+        redo()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [deleteSelected, cancelWiring, clearSelection])
+  }, [deleteSelected, cancelWiring, clearSelection, undo, redo])
 
   return (
     <div

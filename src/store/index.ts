@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
-import { enableMapSet } from 'immer'
+import { enableMapSet, type Draft } from 'immer'
 import {
   clearPathCache,
   clearPathsForComponent,
@@ -124,6 +124,13 @@ interface AppState {
   customComponents: Map<CustomComponentId, CustomComponentDefinition>
   editingCustomComponentId: CustomComponentId | null
 
+  // Undo/Redo
+  undoStack: Circuit[]
+  redoStack: Circuit[]
+  pushUndo: () => void
+  undo: () => void
+  redo: () => void
+
   // Circuit actions
   addComponent: (type: ComponentType, x: number, y: number) => ComponentId
   removeComponent: (id: ComponentId) => void
@@ -188,8 +195,23 @@ interface AppState {
 
 // === Store Implementation ===
 export const useStore = create<AppState>()(
-  immer((set, get) => ({
+  immer((set, get) => {
+    const MAX_UNDO = 100
+    const withUndo = (fn: (state: Draft<AppState>) => void) => {
+      const currentCircuit = get().circuit
+      set((state) => {
+        state.undoStack.push(currentCircuit)
+        state.redoStack.length = 0
+        if (state.undoStack.length > MAX_UNDO)
+          state.undoStack.splice(0, state.undoStack.length - MAX_UNDO)
+        fn(state)
+      })
+    }
+
+    return {
     circuit: createDefaultCircuit(),
+    undoStack: [] as Circuit[],
+    redoStack: [] as Circuit[],
     ui: initialUIState,
     customComponents: new Map<CustomComponentId, CustomComponentDefinition>(),
     editingCustomComponentId: null,
@@ -197,7 +219,7 @@ export const useStore = create<AppState>()(
     // === Circuit Actions ===
     addComponent: (type, x, y) => {
       const id = nextComponentId++ as ComponentId
-      set((state) => {
+      withUndo((state) => {
         state.circuit.components.push({
           id,
           type,
@@ -210,7 +232,7 @@ export const useStore = create<AppState>()(
     },
 
     removeComponent: (id) => {
-      set((state) => {
+      withUndo((state) => {
         state.circuit.components = state.circuit.components.filter((c) => c.id !== id)
         // Remove connected wires
         state.circuit.wires = state.circuit.wires.filter(
@@ -285,7 +307,7 @@ export const useStore = create<AppState>()(
 
     addWire: (source, target, waypoints) => {
       const id = nextWireId++ as WireId
-      set((state) => {
+      withUndo((state) => {
         // Remove any existing wire to the same target (input pins can only have one connection)
         state.circuit.wires = state.circuit.wires.filter((w) => {
           if (target.type === 'component') {
@@ -308,7 +330,7 @@ export const useStore = create<AppState>()(
     },
 
     removeWire: (id) => {
-      set((state) => {
+      withUndo((state) => {
         state.circuit.wires = state.circuit.wires.filter((w) => w.id !== id)
         state.ui.selection.wires.delete(id)
       })
@@ -330,7 +352,7 @@ export const useStore = create<AppState>()(
       const id = nextInputId++ as InputId
       const state = get()
       const order = state.circuit.inputs.length
-      set((state) => {
+      withUndo((state) => {
         state.circuit.inputs.push({
           id,
           label: label ?? `I${order}`,
@@ -343,7 +365,7 @@ export const useStore = create<AppState>()(
     },
 
     removeInput: (id) => {
-      set((state) => {
+      withUndo((state) => {
         // Always keep at least 1 input
         if (state.circuit.inputs.length <= 1) return
         state.circuit.inputs = state.circuit.inputs.filter((i) => i.id !== id)
@@ -359,7 +381,7 @@ export const useStore = create<AppState>()(
     },
 
     toggleInput: (id) => {
-      set((state) => {
+      withUndo((state) => {
         const input = state.circuit.inputs.find((i) => i.id === id)
         if (input) {
           // Only toggle single-bit inputs
@@ -371,7 +393,7 @@ export const useStore = create<AppState>()(
     },
 
     renameInput: (id, label) => {
-      set((state) => {
+      withUndo((state) => {
         const input = state.circuit.inputs.find((i) => i.id === id)
         if (input) {
           input.label = label
@@ -380,7 +402,7 @@ export const useStore = create<AppState>()(
     },
 
     setInputBitWidth: (id, bitWidth) => {
-      set((state) => {
+      withUndo((state) => {
         const input = state.circuit.inputs.find((i) => i.id === id)
         if (input) {
           const clampedWidth = Math.max(1, Math.min(32, bitWidth))
@@ -428,7 +450,7 @@ export const useStore = create<AppState>()(
     },
 
     setInputValue: (id, value) => {
-      set((state) => {
+      withUndo((state) => {
         const input = state.circuit.inputs.find((i) => i.id === id)
         if (input) {
           // Ensure value matches bitWidth
@@ -457,7 +479,7 @@ export const useStore = create<AppState>()(
       const id = nextOutputId++ as OutputId
       const state = get()
       const order = state.circuit.outputs.length
-      set((state) => {
+      withUndo((state) => {
         state.circuit.outputs.push({
           id,
           label: label ?? `O${order}`,
@@ -469,7 +491,7 @@ export const useStore = create<AppState>()(
     },
 
     removeOutput: (id) => {
-      set((state) => {
+      withUndo((state) => {
         // Always keep at least 1 output
         if (state.circuit.outputs.length <= 1) return
         state.circuit.outputs = state.circuit.outputs.filter((o) => o.id !== id)
@@ -485,7 +507,7 @@ export const useStore = create<AppState>()(
     },
 
     renameOutput: (id, label) => {
-      set((state) => {
+      withUndo((state) => {
         const output = state.circuit.outputs.find((o) => o.id === id)
         if (output) {
           output.label = label
@@ -494,7 +516,7 @@ export const useStore = create<AppState>()(
     },
 
     setSplitMergeConfig: (id, config) => {
-      set((state) => {
+      withUndo((state) => {
         const component = state.circuit.components.find((c) => c.id === id)
         if (!component || component.type !== 'SPLIT_MERGE') return
         const nextConfig = normalizeSplitMergeConfig(config)
@@ -656,6 +678,10 @@ export const useStore = create<AppState>()(
 
         state.editingCustomComponentId = null
 
+        // Clear undo/redo stacks (circuit was replaced)
+        state.undoStack.length = 0
+        state.redoStack.length = 0
+
         // Clear selection
         state.ui.selection.components.clear()
         state.ui.selection.wires.clear()
@@ -751,6 +777,8 @@ export const useStore = create<AppState>()(
         }
 
         draft.editingCustomComponentId = id
+        draft.undoStack.length = 0
+        draft.redoStack.length = 0
         draft.ui.selection.components.clear()
         draft.ui.selection.wires.clear()
         draft.ui.wiring.active = false
@@ -843,13 +871,29 @@ export const useStore = create<AppState>()(
     },
 
     deleteSelected: () => {
-      const state = get()
-      for (const id of state.ui.selection.components) {
-        state.removeComponent(id)
-      }
-      for (const id of state.ui.selection.wires) {
-        state.removeWire(id)
-      }
+      const { ui } = get()
+      if (ui.selection.components.size === 0 && ui.selection.wires.size === 0) return
+      const deletedComponents = new Set(ui.selection.components)
+      const deletedWires = new Set(ui.selection.wires)
+      withUndo((state) => {
+        for (const id of deletedComponents) {
+          state.circuit.wires = state.circuit.wires.filter(
+            (w) =>
+              !(w.source.type === 'component' && w.source.componentId === id) &&
+              !(w.target.type === 'component' && w.target.componentId === id)
+          )
+        }
+        state.circuit.components = state.circuit.components.filter(
+          (c) => !deletedComponents.has(c.id)
+        )
+        state.circuit.wires = state.circuit.wires.filter(
+          (w) => !deletedWires.has(w.id)
+        )
+        state.ui.selection.components.clear()
+        state.ui.selection.wires.clear()
+      })
+      for (const id of deletedComponents) removeLatchState(id)
+      for (const id of deletedWires) clearWirePath(id)
     },
 
     setDrag: (drag) => {
@@ -976,7 +1020,7 @@ export const useStore = create<AppState>()(
         return undefined
       }
 
-      // Helper to validate bit width compatibility and auto-adapt output board pins
+      // Helper to validate bit width compatibility
         const getSplitMergePinWidth = (pin: PinRef): number | null => {
           if (pin.type !== 'component') return null
           const component = state.circuit.components.find((c) => c.id === pin.componentId)
@@ -988,20 +1032,12 @@ export const useStore = create<AppState>()(
           return config.partitions[pin.pinIndex - 1] ?? 1
         }
 
-        const validateAndAdaptBitWidth = (sourcePin: PinRef, targetPin: PinRef): boolean => {
+        const validateBitWidth = (sourcePin: PinRef, targetPin: PinRef): boolean => {
           const sourceBitWidth = getPinBitWidth(sourcePin)
           const targetBitWidth = getPinBitWidth(targetPin)
 
-          // If target is output board pin, auto-adapt its bitWidth to match source
+          // If target is output board pin, will auto-adapt in withUndo block
           if (targetPin.type === 'output') {
-            if (sourceBitWidth !== targetBitWidth) {
-              set((s) => {
-                const output = s.circuit.outputs.find((o) => o.id === targetPin.outputId)
-                if (output) {
-                  output.bitWidth = sourceBitWidth
-                }
-              })
-            }
             return true
           }
 
@@ -1026,37 +1062,64 @@ export const useStore = create<AppState>()(
           return true
         }
 
+      // Helper to add wire with undo in a single transaction (including bitwidth adaptation)
+      const addWireWithUndo = (source: WireSource, target: WireTarget, waypoints: Point[] | undefined, sourcePin: PinRef) => {
+        const id = nextWireId++ as WireId
+        withUndo((s) => {
+          // Auto-adapt output bitwidth to match source
+          if (target.type === 'output') {
+            const sourceBitWidth = getPinBitWidth(sourcePin)
+            const output = s.circuit.outputs.find((o) => o.id === target.outputId)
+            if (output && output.bitWidth !== sourceBitWidth) {
+              output.bitWidth = sourceBitWidth
+            }
+          }
+          // Remove existing wire to same target
+          s.circuit.wires = s.circuit.wires.filter((w) => {
+            if (target.type === 'component') {
+              return !(
+                w.target.type === 'component' &&
+                w.target.componentId === target.componentId &&
+                w.target.pinIndex === target.pinIndex
+              )
+            } else {
+              return !(w.target.type === 'output' && w.target.outputId === target.outputId)
+            }
+          })
+          const wire: Wire = { id, source, target }
+          if (waypoints && waypoints.length > 0) {
+            wire.waypoints = waypoints
+          }
+          s.circuit.wires.push(wire)
+        })
+      }
 
       // Try startPin as source, pin as target
       const source1 = canBeSource(startPin)
       const target1 = canBeTarget(pin)
       if (source1 && target1) {
-        // Validate bit widths
-        if (!validateAndAdaptBitWidth(startPin, pin)) {
+        if (!validateBitWidth(startPin, pin)) {
           state.cancelWiring()
           return
         }
         const finalWaypoints = computeFinalWaypoints(source1, target1, userWaypoints)
-        const wireId = state.addWire(source1, target1, finalWaypoints)
-        if (wireId) {
-          state.cancelWiring()
-          return
-        }
+        addWireWithUndo(source1, target1, finalWaypoints, startPin)
+        state.cancelWiring()
+        return
       }
 
       // Try pin as source, startPin as target (reverse direction)
       const source2 = canBeSource(pin)
       const target2 = canBeTarget(startPin)
       if (source2 && target2) {
-        // Validate bit widths
-        if (!validateAndAdaptBitWidth(pin, startPin)) {
+        if (!validateBitWidth(pin, startPin)) {
           state.cancelWiring()
           return
         }
         // When reversing direction, reverse the user waypoints first
         const reversedUserWaypoints = [...userWaypoints].reverse()
         const finalWaypoints = computeFinalWaypoints(source2, target2, reversedUserWaypoints)
-        state.addWire(source2, target2, finalWaypoints)
+        addWireWithUndo(source2, target2, finalWaypoints, pin)
       }
 
       state.cancelWiring()
@@ -1117,5 +1180,50 @@ export const useStore = create<AppState>()(
         state.ui.contextMenu = null
       })
     },
-  }))
+
+    pushUndo: () => {
+      const currentCircuit = get().circuit
+      set((state) => {
+        state.undoStack.push(currentCircuit)
+        state.redoStack.length = 0
+        if (state.undoStack.length > MAX_UNDO)
+          state.undoStack.splice(0, state.undoStack.length - MAX_UNDO)
+      })
+    },
+
+    undo: () => {
+      const s = get()
+      if (s.undoStack.length === 0) return
+      if (s.ui.drag.type !== 'none' || s.ui.wiring.active) return
+      const currentCircuit = s.circuit
+      set((state) => {
+        state.redoStack.push(currentCircuit)
+        state.circuit = state.undoStack.pop()!
+        state.ui.selection.components.clear()
+        state.ui.selection.wires.clear()
+        state.ui.wiring = { active: false, startPin: null, waypoints: [] }
+        state.ui.contextMenu = null
+      })
+      clearPathCache()
+      resetLatchStates()
+    },
+
+    redo: () => {
+      const s = get()
+      if (s.redoStack.length === 0) return
+      if (s.ui.drag.type !== 'none' || s.ui.wiring.active) return
+      const currentCircuit = s.circuit
+      set((state) => {
+        state.undoStack.push(currentCircuit)
+        state.circuit = state.redoStack.pop()!
+        state.ui.selection.components.clear()
+        state.ui.selection.wires.clear()
+        state.ui.wiring = { active: false, startPin: null, waypoints: [] }
+        state.ui.contextMenu = null
+      })
+      clearPathCache()
+      resetLatchStates()
+    },
+  }
+  })
 )
